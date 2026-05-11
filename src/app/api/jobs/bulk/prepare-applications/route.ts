@@ -1,0 +1,114 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { apiError } from "@/lib/api";
+import { prepareApplicationPackage } from "@/lib/applications/prepare-package";
+import { prisma } from "@/lib/prisma";
+
+export const dynamic = "force-dynamic";
+
+const requestSchema = z.object({
+  minimumScore: z.number().int().min(0).max(100).default(85),
+  limit: z.number().int().min(1).max(50).default(10),
+  profileId: z.string().optional(),
+  statuses: z.array(z.enum(["needs_review", "approved", "resume_generated", "cover_letter_generated"])).default(["needs_review", "approved"]),
+});
+
+export async function POST(request: Request) {
+  try {
+    const body = request.headers.get("content-type")?.includes("application/json") ? await request.json() : {};
+    const input = requestSchema.parse(body);
+    const rawMatches = await prisma.jobProfileMatch.findMany({
+      where: {
+        status: { in: input.statuses },
+        overallScore: { gte: input.minimumScore },
+        ...(input.profileId ? { jobSearchProfileId: input.profileId } : {}),
+        jobPosting: {
+          applicationUrl: { not: null },
+        },
+      },
+      include: {
+        jobPosting: { select: { id: true, company: true, title: true } },
+        jobSearchProfile: { select: { id: true, name: true } },
+      },
+      orderBy: [{ overallScore: "desc" }, { createdAt: "desc" }],
+      take: input.limit * 4,
+    });
+    const seenJobIds = new Set<string>();
+    const matches = rawMatches
+      .filter((match) => {
+        if (seenJobIds.has(match.jobPostingId)) return false;
+        seenJobIds.add(match.jobPostingId);
+        return true;
+      })
+      .slice(0, input.limit);
+
+    const nextAvailable =
+      matches.length === 0
+        ? await prisma.jobProfileMatch.findFirst({
+            where: {
+              status: { in: input.statuses },
+              ...(input.profileId ? { jobSearchProfileId: input.profileId } : {}),
+              jobPosting: {
+                applicationUrl: { not: null },
+              },
+            },
+            include: {
+              jobPosting: { select: { company: true, title: true } },
+              jobSearchProfile: { select: { name: true } },
+            },
+            orderBy: [{ overallScore: "desc" }, { createdAt: "desc" }],
+          })
+        : null;
+
+    const results = [];
+    for (const match of matches) {
+      try {
+        const prepared = await prepareApplicationPackage(match.jobPostingId);
+        results.push({
+          ok: true,
+          matchId: match.id,
+          jobId: match.jobPostingId,
+          company: match.jobPosting.company,
+          title: match.jobPosting.title,
+          score: match.overallScore,
+          profile: match.jobSearchProfile.name,
+          applicationId: prepared.application.id,
+          resumeId: prepared.resume.id,
+          coverLetterId: prepared.coverLetter.id,
+        });
+      } catch (error) {
+        results.push({
+          ok: false,
+          matchId: match.id,
+          jobId: match.jobPostingId,
+          company: match.jobPosting.company,
+          title: match.jobPosting.title,
+          score: match.overallScore,
+          profile: match.jobSearchProfile.name,
+          error: error instanceof Error ? error.message : "Unknown preparation failure",
+        });
+      }
+    }
+
+    return NextResponse.json({
+      requested: input,
+      eligible: matches.length,
+      candidatesFound: rawMatches.length,
+      nextAvailable: nextAvailable
+        ? {
+            score: nextAvailable.overallScore,
+            status: nextAvailable.status,
+            company: nextAvailable.jobPosting.company,
+            title: nextAvailable.jobPosting.title,
+            profile: nextAvailable.jobSearchProfile.name,
+          }
+        : null,
+      prepared: results.filter((result) => result.ok).length,
+      failed: results.filter((result) => !result.ok).length,
+      manualSubmissionRequired: true,
+      results,
+    });
+  } catch (error) {
+    return apiError(error, 400);
+  }
+}

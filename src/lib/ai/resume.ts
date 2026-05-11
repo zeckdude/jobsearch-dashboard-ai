@@ -1,0 +1,418 @@
+import type { ExperienceBullet, GithubRepository, JobPosting, Project, UserProfile, WorkExperience } from "@prisma/client";
+import { parseStructuredOutput } from "@/lib/ai/openai";
+import { parseResumeHeuristically } from "@/lib/resumes/parse";
+import {
+  generateCoverLetterSchema,
+  parseUploadedResumeSchema,
+  tailorResumeForJobSchema,
+  validateGeneratedResumeSchema,
+  type ParsedResume,
+} from "@/lib/resumes/schemas";
+
+type TailorResumeInput = {
+  userProfile: UserProfile;
+  job: JobPosting;
+  bullets: ExperienceBullet[];
+  projects: Project[];
+  workExperiences?: WorkExperience[];
+  githubRepositories?: GithubRepository[];
+  education?: string[];
+  certifications?: string[];
+};
+
+type GenerateCoverLetterInput = TailorResumeInput & {
+  tailoredResumeMarkdown?: string | null;
+};
+
+export async function parseUploadedResume(extractedText: string): Promise<ParsedResume> {
+  try {
+    const parsed = await parseStructuredOutput({
+      schema: parseUploadedResumeSchema,
+      schemaName: "parse_uploaded_resume",
+      system:
+        "Parse the uploaded resume into structured candidate data. Do not fabricate missing experience. " +
+        "Every achievement, company, technology, and credential must trace back to the supplied resume text. " +
+        "Use truthLevel 'needs_review' for any inferred bullet.",
+      input: { extractedResumeText: extractedText },
+    });
+
+    if (parsed) return parsed;
+  } catch (error) {
+    console.warn("OpenAI resume parsing failed; using heuristic parser.", error);
+  }
+
+  return parseResumeHeuristically(extractedText);
+}
+
+export async function tailorResumeForJob({ userProfile, job, bullets, projects, workExperiences = [], githubRepositories = [], education = [], certifications = [] }: TailorResumeInput) {
+  const fallback = buildFallbackTailoredResume({ userProfile, job, bullets, projects, workExperiences, githubRepositories, education, certifications });
+
+  try {
+    const tailored = await parseStructuredOutput({
+      schema: tailorResumeForJobSchema,
+      schemaName: "tailor_resume_for_job",
+      system:
+        "Create an ATS-friendly tailored resume from only the approved candidate profile and verified bullets supplied. " +
+        "Do not invent companies, dates, metrics, tools, credentials, or unsupported claims. " +
+        "If the job asks for something the source profile does not support, include a warning instead of adding the claim.",
+      input: {
+        candidateProfile: userProfile,
+        verifiedExperienceBullets: bullets.map((bullet) => ({
+          id: bullet.id,
+          company: bullet.company,
+          role: bullet.role,
+          category: bullet.category,
+          text: bullet.text,
+          keywords: bullet.keywords,
+          sourceText: bullet.sourceText,
+        })),
+        projects: projects.map((project) => ({
+          id: project.id,
+          name: project.name,
+          description: project.description,
+          technologies: project.technologies,
+          highlights: project.highlights,
+        })),
+        githubRepositories: githubRepositories.map((repo) => ({
+          name: repo.name,
+          fullName: repo.fullName,
+          url: repo.htmlUrl,
+          description: repo.description,
+          language: repo.language,
+          topics: repo.topics,
+          pushedAt: repo.pushedAt,
+        })),
+        job: {
+          company: job.company,
+          title: job.title,
+          location: job.location,
+          description: job.description,
+          requirements: job.requirements,
+          niceToHaves: job.niceToHaves,
+        },
+      },
+    });
+
+    if (!tailored || !passesResumeQualityGate(tailored.plainTextResume)) return fallback;
+
+    const validation = await parseStructuredOutput({
+      schema: validateGeneratedResumeSchema,
+      schemaName: "validate_generated_resume",
+      system:
+        "Validate whether this tailored resume is truthful against the source candidate profile and selected bullet ids. " +
+        "Flag unsupported or weak claims. Do not be generous.",
+      input: {
+        generatedResume: tailored,
+        sourceCandidateProfile: userProfile,
+        selectedBulletIds: tailored.selectedExperienceBullets.map((selection) => selection.bulletId),
+        sourceBullets: bullets.map((bullet) => ({ id: bullet.id, text: bullet.text })),
+      },
+    });
+
+    return {
+      ...tailored,
+      validation,
+      generatedBy: "openai_structured_outputs",
+    };
+  } catch (error) {
+    console.warn("OpenAI resume tailoring failed; using deterministic fallback.", error);
+    return fallback;
+  }
+}
+
+export async function generateCoverLetterForJob({
+  userProfile,
+  job,
+  bullets,
+  projects,
+  githubRepositories = [],
+  tailoredResumeMarkdown,
+}: GenerateCoverLetterInput) {
+  const fallback = buildFallbackCoverLetter({ userProfile, job, bullets });
+
+  try {
+    const generated = await parseStructuredOutput({
+      schema: generateCoverLetterSchema,
+      schemaName: "generate_cover_letter",
+      system:
+        "Generate a concise, credible cover letter for this job. Use only the supplied approved candidate profile, verified bullets, projects, and tailored resume. " +
+        "Do not fabricate experience, metrics, credentials, employers, dates, or domain claims. Avoid hype, cliches, em dashes, and obvious AI phrasing.",
+      input: {
+        company: job.company,
+        job: {
+          title: job.title,
+          location: job.location,
+          description: job.description,
+          requirements: job.requirements,
+          niceToHaves: job.niceToHaves,
+        },
+        candidateProfile: userProfile,
+        verifiedExperienceBullets: bullets.map((bullet) => ({
+          id: bullet.id,
+          company: bullet.company,
+          role: bullet.role,
+          category: bullet.category,
+          text: bullet.text,
+          keywords: bullet.keywords,
+        })),
+        projects: projects.map((project) => ({
+          id: project.id,
+          name: project.name,
+          description: project.description,
+          technologies: project.technologies,
+          highlights: project.highlights,
+        })),
+        githubRepositories: githubRepositories.map((repo) => ({
+          name: repo.name,
+          fullName: repo.fullName,
+          url: repo.htmlUrl,
+          description: repo.description,
+          language: repo.language,
+          topics: repo.topics,
+          pushedAt: repo.pushedAt,
+        })),
+        tailoredResumeMarkdown,
+      },
+    });
+
+    return {
+      ...(generated ?? fallback),
+      generatedBy: generated ? "openai_structured_outputs" : fallback.generatedBy,
+    };
+  } catch (error) {
+    console.warn("OpenAI cover letter generation failed; using deterministic fallback.", error);
+    return fallback;
+  }
+}
+
+function buildFallbackTailoredResume({ userProfile, job, bullets, projects, workExperiences = [], githubRepositories = [], education = [], certifications = [] }: TailorResumeInput) {
+  const skills = [
+    ...jsonStringArray(userProfile.coreSkills),
+    ...jsonStringArray(userProfile.technicalSkills),
+  ];
+  const jobTerms = tokenize(`${job.title} ${job.description}`);
+  const rankedSkills = uniqueStrings(skills).sort((a, b) => scoreTerm(b, jobTerms) - scoreTerm(a, jobTerms)).slice(0, 32);
+  const rankedBullets = uniqueBullets(bullets)
+    .sort((a, b) => scoreTerm(b.text, jobTerms) - scoreTerm(a.text, jobTerms))
+    .slice(0, 28);
+  const selectedProjects = [...projects]
+    .sort((a, b) => scoreTerm(`${b.name} ${b.description ?? ""}`, jobTerms) - scoreTerm(`${a.name} ${a.description ?? ""}`, jobTerms))
+    .slice(0, 3);
+  const selectedRepos = [...githubRepositories]
+    .filter((repo) => !repo.isFork)
+    .sort((a, b) => scoreTerm(`${b.name} ${b.description ?? ""} ${jsonStringArray(b.topics).join(" ")} ${b.language ?? ""}`, jobTerms) - scoreTerm(`${a.name} ${a.description ?? ""} ${jsonStringArray(a.topics).join(" ")} ${a.language ?? ""}`, jobTerms))
+    .slice(0, 4);
+  const tailoredSummary = [
+    userProfile.professionalSummary ?? userProfile.masterSummary,
+    rankedSkills.length
+      ? `Targeting ${job.title} at ${job.company} with relevant experience across ${rankedSkills.slice(0, 6).join(", ")}.`
+      : `Targeting ${job.title} at ${job.company}.`,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const contactLine = [
+    userProfile.email,
+    userProfile.phone,
+    userProfile.location,
+    userProfile.linkedinUrl,
+    userProfile.githubUrl,
+    userProfile.portfolioUrl,
+  ]
+    .filter((value) => value && value !== "https://" && !String(value).endsWith("linkedin.com/in/"))
+    .join(" | ");
+  const markdownResume = [
+    `# ${userProfile.fullName}`,
+    contactLine,
+    "",
+    "## Summary",
+    tailoredSummary,
+    "",
+    "## Skills",
+    rankedSkills.join(", ") || "React, TypeScript, JavaScript, frontend architecture, product engineering",
+    "",
+    "## Professional Experience",
+    ...formatExperience(rankedBullets, workExperiences),
+    "",
+    "## Projects",
+    ...selectedProjects.map((project) => `- ${project.name}: ${project.description ?? ""}`),
+    ...selectedRepos.map((repo) => `- ${repo.name}: ${[repo.description, repo.language, repo.htmlUrl].filter(Boolean).join(" | ")}`),
+    ...(education.length ? ["", "## Education", ...education.map((item) => `- ${item}`)] : []),
+    ...(certifications.length ? ["", "## Certifications", ...certifications.map((item) => `- ${item}`)] : []),
+  ].join("\n");
+
+  return {
+    tailoredSummary,
+    selectedSkills: rankedSkills,
+    selectedExperienceBullets: rankedBullets.map((bullet) => ({
+      bulletId: bullet.id,
+      rationale: "Selected by keyword overlap with the job title and description.",
+    })),
+    projectSelections: selectedProjects.map((project) => ({
+      projectId: project.id,
+      rationale: "Selected by keyword overlap with the job title and description.",
+    })),
+    keywordAlignment: {
+      matchedTerms: rankedSkills.filter((skill) => scoreTerm(skill, jobTerms) > 0),
+      method: "deterministic_keyword_overlap",
+    },
+    markdownResume,
+    plainTextResume: markdownResume.replace(/^#+\s/gm, ""),
+    warnings: [],
+    unsupportedClaimsDetected: [],
+    validation: null,
+    generatedBy: "deterministic_fallback",
+  };
+}
+
+function passesResumeQualityGate(plainText: string) {
+  const bulletCount = (plainText.match(/^- /gm) ?? []).length;
+  return plainText.length >= 1800 && bulletCount >= 8 && /\bSkills\b/i.test(plainText) && /\bProfessional Experience\b/i.test(plainText);
+}
+
+function uniqueBullets(bullets: ExperienceBullet[]) {
+  const seen = new Set<string>();
+  return bullets.filter((bullet) => {
+    const key = bullet.text.toLowerCase().replace(/\s+/g, " ").trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function formatExperience(bullets: ExperienceBullet[], workExperiences: WorkExperience[]) {
+  const chronologicalWork = sortWorkExperiences(workExperiences);
+  const workByKey = new Map(chronologicalWork.map((work) => [workKey(work.company, work.title), work]));
+  const groups = new Map<string, ExperienceBullet[]>();
+  for (const bullet of bullets) {
+    const key = workKey(bullet.company, bullet.role);
+    groups.set(key, [...(groups.get(key) ?? []), bullet]);
+  }
+
+  const groupEntries = Array.from(groups.entries()).sort(([leftKey], [rightKey]) => {
+    const leftWork = workByKey.get(leftKey);
+    const rightWork = workByKey.get(rightKey);
+    const leftDate = workSortValue(leftWork);
+    const rightDate = workSortValue(rightWork);
+    if (leftDate !== rightDate) return rightDate - leftDate;
+    return leftKey.localeCompare(rightKey);
+  });
+
+  return groupEntries.flatMap(([key, group]) => {
+    const work = workByKey.get(key);
+    const [company, role] = work ? [work.company, work.title] : displayKeyParts(key);
+    const dates = work?.startDate || work?.endDate ? ` | ${[work.startDate, work.endDate].filter(Boolean).join(" - ")}` : "";
+    return [`### ${company} - ${role}${dates}`, ...group.map((bullet) => `- ${bullet.text}`), ""];
+  });
+}
+
+function sortWorkExperiences(workExperiences: WorkExperience[]) {
+  const seen = new Set<string>();
+  return [...workExperiences]
+    .sort((a, b) => {
+      const dateDiff = workSortValue(b) - workSortValue(a);
+      if (dateDiff !== 0) return dateDiff;
+      return b.createdAt.getTime() - a.createdAt.getTime();
+    })
+    .filter((work) => {
+      const key = `${workKey(work.company, work.title)}|${work.startDate ?? ""}|${work.endDate ?? ""}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function workSortValue(work: WorkExperience | undefined) {
+  if (!work) return 0;
+  return Math.max(parseResumeDate(work.endDate, work.isCurrent), parseResumeDate(work.startDate, false));
+}
+
+function parseResumeDate(value: string | null | undefined, isCurrent: boolean) {
+  if (isCurrent || /present|current|now/i.test(value ?? "")) return 999999;
+  if (!value) return 0;
+  const match = value.match(/(?:(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+)?(\d{4})/i);
+  if (!match) return 0;
+  const months: Record<string, number> = {
+    jan: 1,
+    feb: 2,
+    mar: 3,
+    apr: 4,
+    may: 5,
+    jun: 6,
+    jul: 7,
+    aug: 8,
+    sep: 9,
+    sept: 9,
+    oct: 10,
+    nov: 11,
+    dec: 12,
+  };
+  const month = match[1] ? months[match[1].toLowerCase()] ?? 12 : 12;
+  return Number(match[2]) * 100 + month;
+}
+
+function workKey(company: string, title: string) {
+  return `${normalizeWorkKey(company)}|${normalizeWorkKey(title)}`;
+}
+
+function normalizeWorkKey(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function displayKeyParts(key: string) {
+  const [company, role] = key.split("|");
+  return [titleCase(company), titleCase(role)];
+}
+
+function titleCase(value: string) {
+  return value.replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function buildFallbackCoverLetter({ userProfile, job, bullets }: Pick<GenerateCoverLetterInput, "userProfile" | "job" | "bullets">) {
+  const strongestBullets = bullets.slice(0, 3).map((bullet) => bullet.text);
+  const skills = [
+    ...jsonStringArray(userProfile.coreSkills),
+    ...jsonStringArray(userProfile.technicalSkills),
+  ].slice(0, 8);
+  const body = [
+    `Dear ${job.company} hiring team,`,
+    "",
+    `I am interested in the ${job.title} role. My background is strongest in ${skills.join(", ")}, with a focus on building practical product interfaces that are maintainable, testable, and useful for experienced users.`,
+    "",
+    strongestBullets.length
+      ? `Relevant examples from my approved profile include: ${strongestBullets.join(" ")}`
+      : userProfile.professionalSummary ?? userProfile.masterSummary,
+    "",
+    `I would welcome a conversation about how this experience maps to ${job.company}'s needs for this role.`,
+    "",
+    `Best,`,
+    userProfile.fullName,
+  ].join("\n");
+
+  return {
+    body,
+    toneNotes: ["Concise deterministic fallback generated from approved profile data."],
+    warnings: [],
+    unsupportedClaimsDetected: [],
+    generatedBy: "deterministic_fallback",
+  };
+}
+
+function jsonStringArray(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function uniqueStrings(values: string[]) {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+}
+
+function tokenize(value: string) {
+  return new Set(value.toLowerCase().match(/[a-z0-9+#.]+/g) ?? []);
+}
+
+function scoreTerm(value: string, terms: Set<string>) {
+  let score = 0;
+  for (const term of tokenize(value)) {
+    if (terms.has(term)) score += 1;
+  }
+  return score;
+}

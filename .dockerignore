@@ -1,0 +1,9 @@
+node_modules
+.next
+.venv-assistant
+.assistant-browser-profile
+.assistant-downloads
+.DS_Store
+npm-debug.log
+Dockerfile*
+docker-compose*.yml
