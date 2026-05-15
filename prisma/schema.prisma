@@ -320,11 +320,30 @@ model CandidateEvidence {
   createdAt                DateTime                    @default(now())
   updatedAt                DateTime                    @updatedAt
   candidateProfile         UserProfile                 @relation(fields: [candidateProfileId], references: [id], onDelete: Cascade)
+  chunks                   EvidenceChunk[]
   embeddings               EvidenceEmbedding[]
 
   @@index([candidateProfileId, confidence])
   @@index([candidateProfileId, type])
   @@index([sourceType, sourceRef])
+}
+
+model EvidenceChunk {
+  id             String            @id @default(cuid())
+  evidenceId     String
+  chunkIndex     Int
+  content        String
+  metadata       Json              @default("{}")
+  embeddingModel String?
+  dimensions     Int?
+  vector         Json              @default("[]")
+  contentHash    String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  evidence       CandidateEvidence @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+
+  @@unique([evidenceId, chunkIndex])
+  @@index([embeddingModel, updatedAt])
 }
 
 model EvidenceEmbedding {

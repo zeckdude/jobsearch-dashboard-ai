@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import type { CandidateEvidence, Prisma } from "@prisma/client";
 import { createEmbedding, isOpenAiConfigured } from "@/lib/ai/openai";
+import { chunkEmbeddingText, syncEvidenceChunks } from "@/lib/evidence/chunking";
 import { jsonArray } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
 
@@ -30,6 +31,7 @@ export async function backfillEvidenceEmbeddings(input: EvidenceEmbeddingBackfil
       confidence: { not: "REJECTED" },
     },
     include: {
+      chunks: true,
       embeddings: {
         where: { model: DEFAULT_MODEL },
         orderBy: { updatedAt: "desc" },
@@ -43,6 +45,7 @@ export async function backfillEvidenceEmbeddings(input: EvidenceEmbeddingBackfil
   let skipped = 0;
 
   for (const item of evidence) {
+    if (!item.chunks.length) await syncEvidenceChunks(item);
     const text = evidenceEmbeddingText(item);
     const contentHash = hashContent(text);
     const existing = item.embeddings[0];
@@ -80,11 +83,67 @@ export async function backfillEvidenceEmbeddings(input: EvidenceEmbeddingBackfil
     embedded += 1;
   }
 
+  const chunkResult = await backfillEvidenceChunkEmbeddings(input);
+
   return {
     embedded,
     skipped,
-    message: `Embedded ${embedded} evidence item${embedded === 1 ? "" : "s"}; skipped ${skipped}.`,
+    chunkEmbedded: chunkResult.embedded,
+    chunkSkipped: chunkResult.skipped,
+    message: `Embedded ${embedded} evidence item${embedded === 1 ? "" : "s"} and ${chunkResult.embedded} chunk${chunkResult.embedded === 1 ? "" : "s"}; skipped ${skipped + chunkResult.skipped}.`,
   };
+}
+
+export async function backfillEvidenceChunkEmbeddings(input: EvidenceEmbeddingBackfillInput = {}) {
+  if (!isOpenAiConfigured()) {
+    return {
+      embedded: 0,
+      skipped: 0,
+    };
+  }
+
+  const limit = Math.min(Math.max(input.limit ?? 50, 1), 200);
+  const chunks = await prisma.evidenceChunk.findMany({
+    where: {
+      evidence: {
+        ...(input.candidateProfileId ? { candidateProfileId: input.candidateProfileId } : {}),
+        ...(input.evidenceIds?.length ? { id: { in: input.evidenceIds } } : {}),
+        confidence: { not: "REJECTED" },
+      },
+    },
+    orderBy: [{ updatedAt: "desc" }],
+    take: limit,
+  });
+  let embedded = 0;
+  let skipped = 0;
+
+  for (const chunk of chunks) {
+    const text = chunkEmbeddingText(chunk);
+    const contentHash = hashContent(text);
+    if (!input.force && chunk.embeddingModel === DEFAULT_MODEL && chunk.contentHash === contentHash && numericVector(chunk.vector).length) {
+      skipped += 1;
+      continue;
+    }
+
+    const result = await createEmbedding(text);
+    if (!result || result.vector.length === 0) {
+      skipped += 1;
+      continue;
+    }
+
+    await prisma.evidenceChunk.update({
+      where: { id: chunk.id },
+      data: {
+        embeddingModel: result.model,
+        dimensions: result.vector.length,
+        vector: result.vector as Prisma.InputJsonValue,
+        contentHash,
+      },
+    });
+    embedded += 1;
+  }
+
+  return { embedded, skipped };
 }
 
 export async function createQueryEmbedding(query: string | undefined) {

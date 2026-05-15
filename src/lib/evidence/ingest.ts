@@ -1,4 +1,5 @@
 import type { CandidateEvidenceSourceType, CandidateEvidenceType, EvidenceConfidence, Prisma } from "@prisma/client";
+import { syncEvidenceChunks } from "@/lib/evidence/chunking";
 import { defaultUsabilityForConfidence, truthLevelToEvidenceConfidence } from "@/lib/evidence/confidence";
 import { inferEvidenceTags, normalizeTags } from "@/lib/evidence/tags";
 import { prisma } from "@/lib/prisma";
@@ -201,16 +202,20 @@ export async function upsertEvidence(draft: EvidenceDraft) {
   };
 
   if (existing) {
-    return prisma.candidateEvidence.update({
+    const evidence = await prisma.candidateEvidence.update({
       where: { id: existing.id },
       data,
     });
+    await syncEvidenceChunks(evidence);
+    return evidence;
   }
 
-  return prisma.candidateEvidence.create({
+  const evidence = await prisma.candidateEvidence.create({
     data: {
       candidateProfileId: draft.candidateProfileId,
       ...data,
     },
   });
+  await syncEvidenceChunks(evidence);
+  return evidence;
 }

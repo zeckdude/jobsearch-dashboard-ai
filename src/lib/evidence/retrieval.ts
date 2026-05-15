@@ -41,6 +41,10 @@ export async function retrieveCandidateEvidence(input: RetrieveCandidateEvidence
   const evidence = await prisma.candidateEvidence.findMany({
     where,
     include: {
+      chunks: {
+        orderBy: { chunkIndex: "asc" },
+        take: 8,
+      },
       embeddings: {
         orderBy: { updatedAt: "desc" },
         take: 1,
@@ -55,9 +59,10 @@ export async function retrieveCandidateEvidence(input: RetrieveCandidateEvidence
     .map((item) => {
       const lexicalScore = scoreEvidenceText(item, input.query, requiredTags);
       const vectorScore = queryEmbedding ? scoreEvidenceVector(item.embeddings[0]?.vector, queryEmbedding.vector) : 0;
+      const chunkScore = scoreEvidenceChunks(item.chunks, input.query, queryEmbedding?.vector);
       return {
         ...item,
-        relevanceScore: vectorScore ? lexicalScore + vectorScore : lexicalScore,
+        relevanceScore: lexicalScore + vectorScore + chunkScore,
       };
     })
     .filter((item) => item.relevanceScore > 0)
@@ -65,6 +70,21 @@ export async function retrieveCandidateEvidence(input: RetrieveCandidateEvidence
 
   return dedupeRetrievedEvidence(scoredEvidence)
     .slice(0, input.limit ?? 24);
+}
+
+function scoreEvidenceChunks(chunks: Array<{ content: string; vector: Prisma.JsonValue }>, query?: string, queryVector?: number[]) {
+  if (!chunks.length) return 0;
+  const queryTerms = normalizeQueryTerms(query);
+  const lexical = queryTerms.length
+    ? Math.max(...chunks.map((chunk) => {
+        const content = chunk.content.toLowerCase();
+        return queryTerms.reduce((score, term) => score + (content.includes(term) ? 2 : 0), 0);
+      }))
+    : 0;
+  const vector = queryVector
+    ? Math.max(...chunks.map((chunk) => scoreEvidenceVector(chunk.vector, queryVector)))
+    : 0;
+  return lexical + vector;
 }
 
 function scoreEvidenceVector(vectorJson: unknown, queryVector: number[]) {

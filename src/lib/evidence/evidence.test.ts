@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { classifyConfidence, classifyEvidenceType } from "@/lib/agents/candidate-intelligence";
 import { confidenceMeetsMinimum, truthLevelToEvidenceConfidence } from "@/lib/evidence/confidence";
+import { createEvidenceChunks } from "@/lib/evidence/chunking";
 import { createResumeEvidenceChunks } from "@/lib/evidence/ingest";
 import { dedupeRetrievedEvidence, scoreEvidenceText } from "@/lib/evidence/retrieval";
 import { inferEvidenceTags } from "@/lib/evidence/tags";
@@ -90,6 +91,23 @@ React TypeScript Next.js Storybook Playwright
     expect(chunks.length).toBeGreaterThanOrEqual(3);
     expect(chunks.some((chunk) => chunk.type === "PROJECT" && chunk.content.includes("Progression Lab AI"))).toBe(true);
     expect(chunks.every((chunk) => chunk.title.startsWith("Resume evidence:"))).toBe(true);
+  });
+
+  it("creates bounded chunks below each evidence item", () => {
+    const chunks = createEvidenceChunks({
+      id: "ev_1",
+      title: "Progression Lab AI",
+      content: "AI-assisted music SaaS with React and TypeScript. ".repeat(80),
+      type: "PROJECT",
+      sourceType: "USER_INPUT",
+      sourceRef: "project_1",
+      tags: ["ai", "react", "typescript"],
+    });
+
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.length).toBeLessThanOrEqual(8);
+    expect(chunks.every((chunk) => chunk.content.length <= 900)).toBe(true);
+    expect(chunks[0]?.metadata).toMatchObject({ title: "Progression Lab AI", type: "PROJECT" });
   });
 
   it("infers profile-relevant tags", () => {
