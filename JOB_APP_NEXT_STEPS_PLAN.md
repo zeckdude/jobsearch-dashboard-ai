@@ -74,6 +74,8 @@ Acceptance criteria:
 
 ## Phase 2: Workflow And UX Audit
 
+Status: implemented, with continued polish expected as real usage reveals friction.
+
 Goal: Reduce user effort across the whole app.
 
 Current target:
@@ -108,15 +110,32 @@ Questions to answer for each page:
 - If an agent cannot do it, why?
 - What should happen automatically after the user approves something?
 
+Implemented:
+
+- Dashboard now has a top-level “Next Action” card that routes the user to the highest-priority step from agent blockers, the daily plan, ready applications, review queue, or search refresh.
+- Application detail pages now show a staged progress card for review fit, packet generation, QA, approval, form fill, and outcome tracking, with one primary next action.
+- Apply Sprint now surfaces the selected application's open blocker as the primary question and prevents assistant launch until it is resolved.
+- Apply Sprint now shows queue-level workflow progress for each ready application: ready, launched/review, or blocked.
+- Apply Sprint now uses one state-aware primary action for the selected item and moves launch-next/delete into secondary actions.
+- Apply Sprint now persists visible assistant run state after navigation, including running, ready-to-submit, submitted, blocked, and failed states from `ApplicationAutomationRun`.
+- Applications page now has a page-level next action card that routes users to Apply Sprint, packet preparation, application creation, or job review based on current queue state.
+- Jobs page now has a page-level next action card that opens the top review match, prepares approved jobs, or runs discovery when the queue is empty.
+- Search Profiles page now has a page-level next action card that recommends creating/enabling profiles, running optimizer, finding gaps, or moving to discovery.
+- Evidence Library now has a page-level next action card that prioritizes uncertain evidence review, missing embeddings, or adding fresh career evidence.
+- Outcome Analytics now has a page-level next action card that routes users to create applications, record outcomes, run learning, or review recommendations.
+- Networking page now has a page-level next action card that prioritizes due follow-ups, draft review, strategy planning, or application-based outreach generation.
+- Runs page now has a page-level next action card that surfaces running discovery, saved jobs ready for review, failed/partial runs, or the need to start discovery.
+- Company Sources page now has a page-level next action card that recommends enabling sources, seeding sources, or running company-source discovery.
+- Agent Review Board now has a page-level next action card that prioritizes evidence review, material QA, job recommendations, profile optimization, or the daily plan.
+- Generated Materials page now has a page-level next action card that prioritizes QA review, missing cover letters, or moving clean materials into Applications.
+- Needs Me page now has a page-level next action card that prioritizes the top blocker by type and age.
+- Resume Workspace now has a page-level next action card that routes users through resume upload, parsed-data review, candidate profile, variants, generated materials, or jobs.
+
 Likely improvements:
 
-- Add a global “Next Action” rail or command center card.
-- Add page-level primary actions.
-- Collapse secondary maintenance actions.
-- Add “agent is working” state everywhere background work can run.
-- Add “blocked, needs user” state with one clear question.
-- Add workflow progress for each application.
-- Replace scattered buttons with staged actions:
+- Continue adding page-level primary actions to lower-traffic pages.
+- Continue adding “agent is working” state to other background agent surfaces.
+- Continue replacing scattered buttons with staged actions:
   - Review fit
   - Approve intent
   - Generate packet
@@ -279,12 +298,14 @@ Implemented:
 - Existing `INTERVIEW_PREP` agent builds likely themes, risks, evidence stories, follow-up focus, and questions from approved evidence and the job.
 - Application detail pages can generate and display interview prep.
 - Email ingestion now triggers interview prep for matched interview, scheduling, coding assessment, and take-home messages.
+- Interview prep generation now sends a notification when notification settings are configured.
+- Interview prep generation now persists task rows for risks, evidence stories, themes, and questions, and application pages let the user mark tasks done.
+- Recording recruiter screen, tech screen, onsite, or final outcomes now ensures interview prep and prep tasks exist.
+- Interview prep now incorporates saved company research into likely stages, likely assessments, questions, risks, and source notes without inventing unsupported external claims.
 
 Remaining:
 
-- Add live company-process research from public sources.
-- Add persistent prep task tracking beyond the generated agent run.
-- Add notifications when a prep packet is created.
+- Add true live public web research for company interview processes if you want network-backed sources beyond saved company/job research.
 
 Acceptance criteria:
 
@@ -294,6 +315,8 @@ Acceptance criteria:
 - User gets a short action list, not a giant research dump.
 
 ## Phase 5: Autonomous Application Execution Agent
+
+Status: implemented as a conservative local assistant with gated submit controls.
 
 Goal: After job approval, an agent should open the application, fill the entire application when possible, submit when allowed, and update records.
 
@@ -339,18 +362,24 @@ Implemented:
 - Local Playwright assistant only attempts submit when app policy allows it and page-level checks pass.
 - Assistant logs marked as submitted record an `APPLIED` outcome once.
 - Gated submit captures confirmation screenshot/text paths and stores them on the automation run.
+- Gated submit now requires detected confirmation text before recording a submitted run, and secondary review/confirmation steps are treated as manual checkpoints.
 
 Remaining:
 
 - Add per-company overrides if application-level controls are not enough.
-- Expand page-level detection for multi-step submit/confirmation flows.
 
 ### Phase 5D: Learn From Failures
 
-- Save application form patterns.
-- Save resolved answers.
-- Save field selectors where safe.
-- Record blockers by ATS/provider.
+Status: implemented.
+
+Implemented:
+
+- Automation runs record blocker type/message.
+- ATS blocker analytics summarize recent runs by provider.
+- Apply Sprint shows blocked, failed, ready, and submitted counts by ATS provider.
+- `ApplicationFormPattern` stores reusable safe field patterns by user, host, ATS provider, category, label, input type, and selector.
+- Playwright assistant logs stable selectors for detected fields.
+- Assistant log ingestion persists safe selectors for known reusable fields and skips sensitive/custom unknown fields.
 
 Possible data model additions:
 
@@ -450,10 +479,7 @@ Implemented:
 - Captured jobs reuse the existing dedupe, duplicate detection, search profile scoring, and job fit scoring pipeline.
 - Optional `BROWSER_EXTENSION_TOKEN` protection is supported by the endpoint and extension popup.
 - Extension content script includes Greenhouse, Lever, and Ashby page-specific extraction.
-
-Remaining:
-
-- Add extension packaging/versioning if it needs to be shared across machines.
+- Extension packaging is available with `npm run chrome-extension:package`.
 
 ## Phase 7: Notification And Messaging Loop
 
@@ -497,6 +523,15 @@ Acceptance criteria:
 - New “Needs Me” requests now send through the configured notification pipeline.
 - Assistant blockers and auto-submit skips create a single open application-blocked request.
 - Gated auto-submit success sends an application-submitted notification when notification settings exist.
+- Settings now shows a single next setup action so missing AI, profile links, GitHub context, notifications, company sources, scheduled search, email sync, or automation gates are easier to find.
+- Chrome capture now supports a configurable local app URL, returns a direct captured-job link, and shows profile-match feedback after saving.
+- Application detail timelines now render readable event summaries for email classifications, assistant launches, status changes, and applied outcomes.
+- Resolving a Needs Me blocker now adds a non-sensitive application timeline event showing the request type, question, status, and whether an answer was saved.
+- Assistant automation run status changes now write application timeline events for blocked, ready-to-submit, submitted, and failed states without duplicating poll updates.
+- Approving a job now automatically creates or updates an application tracker, so approved jobs move into the Applications workflow without a separate manual tracker step.
+- Recording an applied outcome now schedules a default seven-day follow-up, ghosted outcomes become immediately due, and later recruiter/rejection/closed outcomes clear stale follow-up dates.
+- Due application follow-ups can now be scanned through `/api/applications/follow-ups/scan`, creating one open Needs Me reminder per due application and using the configured notification pipeline.
+- Needs Me now supports answering agent questions directly from the queue, with explicit opt-in to save unknown-answer responses as low-risk reusable answer memory.
 
 ## Suggested Implementation Order
 
@@ -513,21 +548,37 @@ Acceptance criteria:
 
 ## Open Decisions
 
-- Email provider decision: IMAP foundation is implemented first. Gmail/Outlook OAuth can be added later if app-password IMAP is not enough.
-- Auto-submit control decision: global default plus per-application override is implemented. Company-level overrides remain optional.
-- Which notification channel should be primary for “Needs Me” questions?
-- Should answer memory be encrypted locally for sensitive answers?
-- Should the browser automation run inside Playwright only, or should the Chrome extension also support filling?
+- Email provider decision: IMAP foundation is implemented first. Gmail/Outlook OAuth connection foundation is implemented with start/callback routes and read-only mailbox scopes. Message sync through Gmail/Graph APIs is the next OAuth step.
+- Auto-submit control decision: global default plus per-application override is implemented. Company-level overrides are implemented in policy evaluation and Settings.
+- Notification channel decision: Settings supports email and Pushover. The active primary channel is whatever the user configures locally.
+- Sensitive answer memory: current implementation requires explicit opt-in from Needs Me and stores opt-in queue answers as LOW/ASK_FIRST. Encryption is not planned.
+- Browser automation decision: Playwright remains the filling/submission engine. The Chrome extension is capture-only and should only add applications to the system for agent/user review.
+
+## Local Operations
+
+Run follow-up reminder scan locally:
+
+```bash
+curl -X POST http://localhost:3000/api/applications/follow-ups/scan \
+  -H "content-type: application/json" \
+  -d '{"limit":50}'
+```
+
+If `FOLLOW_UP_SCAN_SECRET` is configured, include:
+
+```bash
+-H "authorization: Bearer $FOLLOW_UP_SCAN_SECRET"
+```
 
 ## Completion Definition
 
 This next stage is complete when:
 
-- The app’s own development is part of candidate evidence.
-- The dashboard tells the user what needs attention.
-- Approved jobs can progress through packet generation and application filling with minimal user work.
-- Unknown answers create user questions and reusable answer memory.
-- Email responses update application records.
-- Interview requests trigger company-specific prep.
-- Manually found jobs can be captured through a local Chrome extension.
-- No applications are submitted unless the user has explicitly enabled that behavior.
+- The app’s own development is part of candidate evidence. Complete.
+- The dashboard tells the user what needs attention. Complete.
+- Approved jobs can progress through packet generation and application filling with minimal user work. Complete.
+- Unknown answers create user questions and reusable answer memory. Complete with explicit opt-in memory saving.
+- Email responses update application records. Complete for IMAP/manual ingestion.
+- Interview requests trigger company-specific prep. Complete for matched email/outcome triggers.
+- Manually found jobs can be captured through a local Chrome extension. Complete.
+- No applications are submitted unless the user has explicitly enabled that behavior. Complete.

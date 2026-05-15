@@ -21,7 +21,6 @@ import { ActionButton } from "@/components/action-button";
 import { JobDescription } from "@/components/job-description";
 import { PageHeader } from "@/components/ui/page-header";
 import { ScoreChip } from "@/components/ui/score-chip";
-import { WorkflowGuide } from "@/components/ui/workflow-guide";
 import { jsonArray } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
 
@@ -69,8 +68,6 @@ export default async function JobDetailPage({ params }: { params: { id: string }
           title={job.title}
           description={`${job.company} · ${job.location ?? "Unknown location"} · ${job.remoteType}`}
         />
-
-        <WorkflowGuide active={readyApplication ? "applications" : "materials"} title={readyApplication ? "Step 4 of 5: package is ready" : "Step 3 of 5: generate the application package"} />
 
         <Card>
           <CardContent>

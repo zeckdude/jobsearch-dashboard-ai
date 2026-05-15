@@ -1,4 +1,7 @@
 import type { CandidateEvidenceSourceType, CandidateEvidenceType, EvidenceConfidence } from "@prisma/client";
+import AddCircleOutlineOutlinedIcon from "@mui/icons-material/AddCircleOutlineOutlined";
+import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
+import HubOutlinedIcon from "@mui/icons-material/HubOutlined";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
@@ -43,6 +46,12 @@ export default async function EvidencePage({ searchParams }: { searchParams?: Ev
     orderBy: [{ confidence: "asc" }, { updatedAt: "desc" }],
     take: 120,
   });
+  const [needsReviewCount, missingEmbeddingCount, usableEvidenceCount] = await Promise.all([
+    prisma.candidateEvidence.count({ where: { confidence: "NEEDS_REVIEW" } }),
+    prisma.candidateEvidence.count({ where: { embeddings: { none: {} }, confidence: { in: ["VERIFIED", "INFERRED"] } } }),
+    prisma.candidateEvidence.count({ where: { confidence: { in: ["VERIFIED", "INFERRED"] }, OR: [{ usableInResume: true }, { usableInCoverLetter: true }, { usableInRecruiterMessage: true }] } }),
+  ]);
+  const nextAction = evidenceNextAction({ needsReviewCount, missingEmbeddingCount, usableEvidenceCount });
 
   return (
     <AppShell>
@@ -58,6 +67,28 @@ export default async function EvidencePage({ searchParams }: { searchParams?: Ev
             </>
           }
         />
+
+        <Card sx={{ borderColor: nextAction.color === "warning" ? "warning.main" : "primary.main", bgcolor: nextAction.color === "warning" ? "rgba(245, 158, 11, 0.08)" : "rgba(37, 99, 235, 0.08)" }}>
+          <CardContent>
+            <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
+              <Box>
+                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 1 }}>
+                  <Chip size="small" color={nextAction.color} label="Next action" />
+                  {typeof nextAction.count === "number" ? <Chip size="small" variant="outlined" label={nextAction.count} /> : null}
+                </Stack>
+                <Typography variant="h3">{nextAction.title}</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{nextAction.detail}</Typography>
+              </Box>
+              {nextAction.kind === "embed" ? (
+                <EmbedEvidenceButton />
+              ) : nextAction.href ? (
+                <Button href={nextAction.href} variant="contained" color={nextAction.color} startIcon={nextAction.icon}>
+                  {nextAction.label}
+                </Button>
+              ) : null}
+            </Stack>
+          </CardContent>
+        </Card>
 
         <AddEvidenceNoteForm />
 
@@ -136,6 +167,44 @@ export default async function EvidencePage({ searchParams }: { searchParams?: Ev
       </Stack>
     </AppShell>
   );
+}
+
+function evidenceNextAction({ needsReviewCount, missingEmbeddingCount, usableEvidenceCount }: { needsReviewCount: number; missingEmbeddingCount: number; usableEvidenceCount: number }) {
+  if (needsReviewCount > 0) {
+    return {
+      kind: "link",
+      title: "Review uncertain evidence",
+      detail: "Approve, edit, or reject uncertain facts before they can influence generated materials.",
+      label: "Review evidence",
+      href: "/evidence?confidence=NEEDS_REVIEW",
+      color: "warning" as const,
+      icon: <FactCheckOutlinedIcon />,
+      count: needsReviewCount,
+    };
+  }
+  if (missingEmbeddingCount > 0) {
+    return {
+      kind: "embed",
+      title: "Embed approved evidence",
+      detail: "Some verified or approved inferred evidence is not searchable by the retrieval layer yet.",
+      label: "Embed evidence",
+      color: "primary" as const,
+      icon: <HubOutlinedIcon />,
+      count: missingEmbeddingCount,
+    };
+  }
+  return {
+    kind: "link",
+    title: usableEvidenceCount > 0 ? "Add fresh career evidence" : "Add your first evidence note",
+    detail: usableEvidenceCount > 0
+      ? "The truth layer is usable. Add new project notes or interview notes when something changes."
+      : "Generation quality depends on approved evidence. Add a project, achievement, or work-history note.",
+    label: "Add note below",
+    href: "#add-evidence-note",
+    color: "primary" as const,
+    icon: <AddCircleOutlineOutlinedIcon />,
+    count: usableEvidenceCount,
+  };
 }
 
 function normalizeConfidence(value?: string): EvidenceConfidence | undefined {

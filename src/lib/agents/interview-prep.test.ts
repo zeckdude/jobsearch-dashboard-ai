@@ -36,8 +36,53 @@ describe("buildInterviewPrep", () => {
 
     expect(prep.likelyThemes).toEqual(expect.arrayContaining(["React/TypeScript product UI depth", "security, identity, and authentication workflows"]));
     expect(prep.evidenceStories[0]?.evidenceRef).toBe("ev1");
+    expect(prep.likelyStages.length).toBeGreaterThan(0);
+    expect(prep.likelyAssessments).toEqual(expect.arrayContaining(["React/TypeScript UI implementation or debugging exercise."]));
     expect(prep.risksToPrepare).toContain("Salary range is unknown.");
     expect(prep.questionsToAsk.some((question) => question.includes("authentication"))).toBe(true);
+  });
+
+  it("uses saved company research when building interview prep", () => {
+    const now = new Date();
+    const application = {
+      id: "app",
+      jobPosting: {
+        id: "job",
+        company: "PlatformCo",
+        title: "Staff Frontend Engineer",
+        description: "Own frontend platform, system design, React, TypeScript, and design systems.",
+      } as JobPosting,
+      jobProfileMatch: null,
+      resume: null,
+      coverLetter: null,
+      createdAt: now,
+      updatedAt: now,
+    } as unknown as Application & {
+      coverLetter: GeneratedCoverLetter | null;
+      jobPosting: JobPosting;
+      jobProfileMatch: JobProfileMatch | null;
+      resume: GeneratedResume | null;
+    };
+
+    const prep = buildInterviewPrep(application, [], {
+      applicationId: "app",
+      company: "PlatformCo",
+      role: "Staff Frontend Engineer",
+      brief: "Saved brief from company research.",
+      roleThemes: ["frontend platform quality"],
+      likelyTeamNeeds: ["raise component quality across product teams"],
+      positioningAngles: [],
+      questionsToAnswer: ["How is frontend platform success measured?"],
+      risks: ["Confirm exact staff-level scope."],
+      sourceNotes: ["Source: Company Source List."],
+      confidence: 0.7,
+      reasoningSummary: "Saved research.",
+    });
+
+    expect(prep.likelyThemes).toContain("frontend platform quality");
+    expect(prep.likelyAssessments).toEqual(expect.arrayContaining(["Discuss how you would help the team raise component quality across product teams."]));
+    expect(prep.questionsToAsk).toContain("How is frontend platform success measured?");
+    expect(prep.sourceNotes[0]).toBe("Saved brief from company research.");
   });
 
   it("prefers focused evidence over broad approved resume snapshots", () => {

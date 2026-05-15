@@ -1,4 +1,6 @@
 import BarChartOutlinedIcon from "@mui/icons-material/BarChartOutlined";
+import EditNoteOutlinedIcon from "@mui/icons-material/EditNoteOutlined";
+import InsightsOutlinedIcon from "@mui/icons-material/InsightsOutlined";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import Box from "@mui/material/Box";
 import Card from "@mui/material/Card";
@@ -80,6 +82,11 @@ export default async function OutcomeAnalyticsPage() {
   const statusCounts = output?.statusCounts ?? Object.fromEntries(liveStatusCounts.map((count) => [count.status, count._count.status]));
   const outcomeCounts = output?.outcomeCounts ?? {};
   const sampleSize = output?.sampleSize ?? applicationCount;
+  const nextAction = outcomeNextAction({
+    applicationCount,
+    explicitOutcomeCount: recentOutcomes.length,
+    latestAnalysisAt: latestRun?.createdAt ?? null,
+  });
 
   return (
     <AppShell>
@@ -90,6 +97,28 @@ export default async function OutcomeAnalyticsPage() {
           description="Use actual application outcomes to tune profiles, sources, and resume positioning. Recommendations stay advisory until you approve changes elsewhere."
           actions={<AnalyzeOutcomesButton />}
         />
+
+        <Card sx={{ borderColor: nextAction.color === "success" ? "success.main" : "primary.main", bgcolor: nextAction.color === "success" ? "rgba(16, 185, 129, 0.08)" : "rgba(37, 99, 235, 0.08)" }}>
+          <CardContent>
+            <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
+              <Box>
+                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 1 }}>
+                  <Chip size="small" color={nextAction.color} label="Next action" />
+                  {typeof nextAction.count === "number" ? <Chip size="small" variant="outlined" label={nextAction.count} /> : null}
+                </Stack>
+                <Typography variant="h3">{nextAction.title}</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{nextAction.detail}</Typography>
+              </Box>
+              {nextAction.kind === "analyze" ? (
+                <AnalyzeOutcomesButton />
+              ) : (
+                <ActionButton href={nextAction.href} variant="contained" color={nextAction.color} startIcon={nextAction.icon}>
+                  {nextAction.label}
+                </ActionButton>
+              )}
+            </Stack>
+          </CardContent>
+        </Card>
 
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(4, 1fr)" }, gap: 2 }}>
           <Metric label="Applications tracked" value={sampleSize.toString()} helper="Outcome sample size" />
@@ -237,6 +266,67 @@ export default async function OutcomeAnalyticsPage() {
       </Stack>
     </AppShell>
   );
+}
+
+function outcomeNextAction({
+  applicationCount,
+  explicitOutcomeCount,
+  latestAnalysisAt,
+}: {
+  applicationCount: number;
+  explicitOutcomeCount: number;
+  latestAnalysisAt: Date | null;
+}) {
+  if (applicationCount === 0) {
+    return {
+      kind: "link",
+      title: "Create applications first",
+      detail: "Outcome learning needs submitted applications and status updates before it can recommend strategy changes.",
+      label: "Open applications",
+      href: "/applications",
+      color: "primary" as const,
+      icon: <EditNoteOutlinedIcon />,
+      count: applicationCount,
+    };
+  }
+  if (explicitOutcomeCount === 0) {
+    return {
+      kind: "link",
+      title: "Record application outcomes",
+      detail: "Open recent applications and record applied, screen, rejection, ghosted, offer, or closed outcomes.",
+      label: "Open applications",
+      href: "/applications",
+      color: "primary" as const,
+      icon: <EditNoteOutlinedIcon />,
+      count: applicationCount,
+    };
+  }
+  if (isOlderThanDays(latestAnalysisAt, 3)) {
+    return {
+      kind: "analyze",
+      title: "Analyze outcomes",
+      detail: "You have recorded outcomes. Run learning to identify which profiles, sources, and positioning are working.",
+      label: "Analyze outcomes",
+      color: "success" as const,
+      icon: <InsightsOutlinedIcon />,
+      count: explicitOutcomeCount,
+    };
+  }
+  return {
+    kind: "link",
+    title: "Review recommendations",
+    detail: "Outcome learning is current. Review recommendations and tune profiles or materials where useful.",
+    label: "Tune profiles",
+    href: "/profiles",
+    color: "success" as const,
+    icon: <InsightsOutlinedIcon />,
+    count: explicitOutcomeCount,
+  };
+}
+
+function isOlderThanDays(date: Date | null, days: number) {
+  if (!date) return true;
+  return Date.now() - date.getTime() > days * 86_400_000;
 }
 
 function Metric({ label, value, helper }: { label: string; value: string; helper: string }) {

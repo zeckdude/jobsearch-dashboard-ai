@@ -1,6 +1,6 @@
 import type { EmailMessageClassification, EmailProvider, Prisma } from "@prisma/client";
 import { createAgentUserRequest } from "@/lib/agent-user-requests";
-import { runInterviewPrepAgent } from "@/lib/agents/interview-prep";
+import { ensureInterviewPrepForApplication } from "@/lib/applications/interview-prep-workflow";
 import { recordApplicationOutcome } from "@/lib/applications/outcomes";
 import { prisma } from "@/lib/prisma";
 
@@ -90,6 +90,16 @@ export function classifyJobEmail(input: Pick<EmailMessageIngestInput, "subject" 
 export async function ingestJobEmail(input: EmailMessageIngestInput) {
   const classification = classifyJobEmail(input);
   const match = await matchEmailToApplication(input.userId, input);
+  const existingEmail = await prisma.emailMessageRecord.findUnique({
+    where: {
+      userId_provider_providerMessageId: {
+        userId: input.userId,
+        provider: input.provider,
+        providerMessageId: input.providerMessageId,
+      },
+    },
+    select: { id: true },
+  });
   const email = await prisma.emailMessageRecord.upsert({
     where: {
       userId_provider_providerMessageId: {
@@ -133,6 +143,22 @@ export async function ingestJobEmail(input: EmailMessageIngestInput) {
     },
   });
 
+  if (match.applicationId && !existingEmail) {
+    await prisma.applicationEvent.create({
+      data: {
+        applicationId: match.applicationId,
+        type: "note_added",
+        payload: buildEmailApplicationEventPayload({
+          emailMessageId: email.id,
+          from: input.from,
+          subject: input.subject,
+          receivedAt: input.receivedAt ?? new Date(),
+          classification,
+        }),
+      },
+    });
+  }
+
   if (match.applicationId && classification.recommendedOutcome) {
     await recordOutcomeFromEmail({
       applicationId: match.applicationId,
@@ -175,6 +201,27 @@ export async function ingestJobEmail(input: EmailMessageIngestInput) {
   };
 }
 
+export function buildEmailApplicationEventPayload(input: {
+  emailMessageId: string;
+  from: string;
+  subject: string;
+  receivedAt: Date;
+  classification: EmailClassificationResult;
+}): Prisma.InputJsonValue {
+  return {
+    source: "email_response_agent",
+    emailMessageId: input.emailMessageId,
+    from: input.from,
+    subject: input.subject,
+    receivedAt: input.receivedAt.toISOString(),
+    classification: input.classification.classification,
+    confidenceScore: input.classification.confidenceScore,
+    actionRequired: input.classification.actionRequired,
+    recommendedOutcome: input.classification.recommendedOutcome ?? null,
+    rationale: input.classification.rationale,
+  };
+}
+
 async function recordOutcomeFromEmail(input: {
   applicationId: string;
   outcome: NonNullable<EmailClassificationResult["recommendedOutcome"]>;
@@ -208,22 +255,10 @@ async function maybeRunInterviewPrep(input: {
     return null;
   }
 
-  const existing = await prisma.agentRun.findFirst({
-    where: {
-      agentType: "INTERVIEW_PREP",
-      inputJson: {
-        path: ["applicationId"],
-        equals: input.applicationId,
-      },
-      status: "COMPLETED",
-    },
-    orderBy: { createdAt: "desc" },
-  });
-  if (existing) return existing;
-
-  const result = await runInterviewPrepAgent({
+  const result = await ensureInterviewPrepForApplication({
     applicationId: input.applicationId,
     userId: input.userId,
+    source: "email",
   });
   return result.run;
 }

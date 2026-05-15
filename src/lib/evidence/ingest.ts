@@ -42,6 +42,7 @@ export const jobSearchOsProject = {
   ],
   highlights: [
     "Built a typed agent service layer with persisted AgentRun observability and deterministic fallbacks.",
+    "Implemented a local Model Context Protocol server exposing Job Search OS tools for dashboard summaries, job search runs, GitHub sync, application packet preparation, profile and application data, and controlled workflow automation.",
     "Implemented candidate evidence ingestion, chunking, embeddings, pgvector retrieval, and confidence-based filtering for truthful generated materials.",
     "Created explainable fit, opportunity, and confidence scoring for jobs, plus outcome learning and search profile optimization.",
     "Built application packet generation with resume strategy, cover letter drafts, recruiter messages, QA checks, selected answer export, and local browser assistant support.",
@@ -60,6 +61,8 @@ export const jobSearchOsProject = {
     "nextjs",
     "typescript",
     "prisma",
+    "mcp",
+    "model-context-protocol",
     "application-automation",
     "job-search-os",
     "developer-tools",

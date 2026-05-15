@@ -1,4 +1,4 @@
-import type { ApplicationAutomationSettings, Prisma } from "@prisma/client";
+import type { ApplicationAutomationSettings, CompanyAutoSubmitPolicyMode, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 export type AutoSubmitEligibility = {
@@ -6,6 +6,10 @@ export type AutoSubmitEligibility = {
   reasons: string[];
   effectiveAutoSubmitEnabled: boolean;
   override: boolean | null;
+  companyPolicy: {
+    company: string;
+    mode: CompanyAutoSubmitPolicyMode;
+  } | null;
   settings: Pick<
     ApplicationAutomationSettings,
     | "autoSubmitEnabled"
@@ -87,11 +91,16 @@ export async function evaluateAutoSubmitEligibility(applicationId: string): Prom
   const packet = application.applicationPackets[0];
   const latestRun = application.automationRuns[0];
   const selectedAnswers = selectedAnswerCount(packet?.applicationAnswersJson);
+  const companyPolicy = await findCompanyAutomationPolicy(application.userId, application.jobPosting.company);
 
-  const effectiveAutoSubmitEnabled = application.autoSubmitOverride ?? settings.autoSubmitEnabled;
+  const effectiveAutoSubmitEnabled = application.autoSubmitOverride
+    ?? (companyPolicy?.autoSubmitMode === "ALLOW" ? true : companyPolicy?.autoSubmitMode === "BLOCK" ? false : settings.autoSubmitEnabled);
 
   if (!effectiveAutoSubmitEnabled) {
-    reasons.push(application.autoSubmitOverride === false ? "Auto-submit is disabled for this application." : "Auto-submit is disabled in settings.");
+    reasons.push(autoSubmitDisabledReason({
+      applicationOverride: application.autoSubmitOverride,
+      companyPolicyMode: companyPolicy?.autoSubmitMode ?? null,
+    }));
   }
   if (application.status !== "ready_to_apply") reasons.push("Application is not in ready_to_apply status.");
   if (!application.jobPosting.applicationUrl) reasons.push("Job does not have an application URL.");
@@ -126,6 +135,12 @@ export async function evaluateAutoSubmitEligibility(applicationId: string): Prom
     reasons,
     effectiveAutoSubmitEnabled,
     override: application.autoSubmitOverride,
+    companyPolicy: companyPolicy
+      ? {
+          company: companyPolicy.company,
+          mode: companyPolicy.autoSubmitMode,
+        }
+      : null,
     settings: {
       autoSubmitEnabled: settings.autoSubmitEnabled,
       requireApprovedPacket: settings.requireApprovedPacket,
@@ -135,6 +150,64 @@ export async function evaluateAutoSubmitEligibility(applicationId: string): Prom
       allowDemographicSubmission: settings.allowDemographicSubmission,
     },
   };
+}
+
+export async function upsertCompanyAutomationPolicy(input: {
+  userId: string;
+  company: string;
+  autoSubmitMode: CompanyAutoSubmitPolicyMode;
+  notes?: string | null;
+}) {
+  const company = input.company.trim();
+  const companyKey = companyAutomationKey(company);
+  if (!companyKey) throw new Error("Company is required.");
+
+  return prisma.companyAutomationPolicy.upsert({
+    where: {
+      userId_companyKey: {
+        userId: input.userId,
+        companyKey,
+      },
+    },
+    create: {
+      userId: input.userId,
+      company,
+      companyKey,
+      autoSubmitMode: input.autoSubmitMode,
+      notes: input.notes?.trim() || null,
+    },
+    update: {
+      company,
+      autoSubmitMode: input.autoSubmitMode,
+      notes: input.notes?.trim() || null,
+    },
+  });
+}
+
+export function companyAutomationKey(company: string) {
+  return company.toLowerCase().replace(/[^a-z0-9]+/g, "").trim();
+}
+
+export function autoSubmitDisabledReason(input: {
+  applicationOverride?: boolean | null;
+  companyPolicyMode?: CompanyAutoSubmitPolicyMode | null;
+}) {
+  if (input.applicationOverride === false) return "Auto-submit is disabled for this application.";
+  if (input.companyPolicyMode === "BLOCK") return "Auto-submit is blocked for this company.";
+  return "Auto-submit is disabled in settings.";
+}
+
+async function findCompanyAutomationPolicy(userId: string, company: string) {
+  const companyKey = companyAutomationKey(company);
+  if (!companyKey) return null;
+  return prisma.companyAutomationPolicy.findUnique({
+    where: {
+      userId_companyKey: {
+        userId,
+        companyKey,
+      },
+    },
+  });
 }
 
 function selectedAnswerCount(value: Prisma.JsonValue | undefined) {

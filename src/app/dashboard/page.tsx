@@ -1,4 +1,5 @@
 import AddCircleOutlineIcon from "@mui/icons-material/AddCircleOutlineOutlined";
+import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import Box from "@mui/material/Box";
 import Card from "@mui/material/Card";
@@ -15,10 +16,9 @@ import { ActionButton } from "@/components/action-button";
 import { BulkPrepareControl } from "@/components/bulk-prepare-control";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
+import { SearchRunCommandCenter } from "@/components/search-run-command-center";
 import { ScoreChip } from "@/components/ui/score-chip";
 import { formatStatus } from "@/components/ui/status-chip";
-import { WorkflowGuide } from "@/components/ui/workflow-guide";
-import { RunSearchControl } from "@/components/run-search-control";
 import { agentUserRequestHref, agentUserRequestTypeLabel, listOpenAgentUserRequests } from "@/lib/agent-user-requests";
 import { jsonArray } from "@/lib/json";
 import { uniqueMatchesByCanonicalJob } from "@/lib/job-search/unique-matches";
@@ -66,7 +66,15 @@ export default async function DashboardPage() {
   const visibleNeedsReview = uniqueMatchesByCanonicalJob(needsReview).slice(0, 5);
   const countByStatus = new Map(statusCounts.map((count) => [count.status, count._count.status]));
   const readyToApply = countByStatus.get("ready_to_apply") ?? 0;
+  const needsReviewCount = countByStatus.get("needs_review") ?? 0;
   const dailyPlan = dailyPlanOutput(latestDailyPlanRun?.outputJson);
+  const nextAction = getNextAction({
+    agentUserRequestCount: agentUserRequests.length,
+    dailyPlan,
+    readyToApply,
+    needsReviewCount,
+    latestRunStartedAt: latestRun?.startedAt ?? null,
+  });
 
   return (
     <AppShell>
@@ -74,99 +82,33 @@ export default async function DashboardPage() {
         <PageHeader
           eyebrow="Command center"
           title="Decision Dashboard"
-          description="Start here: confirm your search profile, run discovery, approve strong matches, generate materials, then work the ready queue in Apply Sprint."
+          description="Start here: resolve blockers, review strong matches, and move ready applications through Apply Sprint."
           actions={
             <>
             <ActionButton href="/jobs/manual" variant="outlined" startIcon={<AddCircleOutlineIcon />}>Add manual job</ActionButton>
-            <RunSearchControl compact />
             </>
           }
         />
 
-        <WorkflowGuide title="How a job reaches Apply Sprint" />
-
-        <Card sx={{ borderColor: agentUserRequests.length ? "warning.main" : "divider" }}>
+        <Card sx={{ borderColor: nextAction.color === "warning" ? "warning.main" : "primary.main", bgcolor: nextAction.color === "warning" ? "rgba(245, 158, 11, 0.08)" : "rgba(37, 99, 235, 0.08)" }}>
           <CardContent>
-            <Stack spacing={2}>
-              <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
-                <Box>
-                  <Typography variant="h3">Needs Me</Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Agent questions and blockers that need a human answer before the workflow can continue.
-                  </Typography>
-                </Box>
-                <ActionButton href="/needs-me" variant={agentUserRequests.length ? "contained" : "outlined"} color={agentUserRequests.length ? "warning" : "primary"}>
-                  {agentUserRequests.length ? `Review ${agentUserRequests.length}` : "Open queue"}
-                </ActionButton>
-              </Stack>
-              {agentUserRequests.length ? (
-                <Stack spacing={1}>
-                  {agentUserRequests.slice(0, 3).map((request) => {
-                    const job = request.application?.jobPosting ?? request.jobPosting;
-                    return (
-                      <Box key={request.id} sx={{ borderTop: 1, borderColor: "divider", pt: 1.25 }}>
-                        <Stack direction={{ xs: "column", md: "row" }} spacing={1} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
-                          <Box>
-                            <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 0.5 }}>
-                              <Chip size="small" color="warning" variant="outlined" label={agentUserRequestTypeLabel(request.type)} />
-                              {job ? <Chip size="small" variant="outlined" label={job.company} /> : null}
-                            </Stack>
-                            <Typography sx={{ fontWeight: 850 }}>{request.question}</Typography>
-                            {job ? <Typography variant="caption" color="text.secondary">{job.title}</Typography> : null}
-                          </Box>
-                          <ActionButton href={agentUserRequestHref(request)} size="small" endIcon={<OpenInNewIcon />}>Open</ActionButton>
-                        </Stack>
-                      </Box>
-                    );
-                  })}
+            <Stack direction={{ xs: "column", lg: "row" }} spacing={2} sx={{ alignItems: { lg: "center" }, justifyContent: "space-between" }}>
+              <Box>
+                <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center", mb: 1 }}>
+                  <Chip size="small" color={nextAction.color} label="Next action" />
+                  {typeof nextAction.count === "number" ? <Chip size="small" variant="outlined" label={nextAction.count} /> : null}
                 </Stack>
-              ) : null}
+                <Typography variant="h2">{nextAction.title}</Typography>
+                <Typography color="text.secondary" sx={{ mt: 0.5 }}>{nextAction.detail}</Typography>
+              </Box>
+              <ActionButton href={nextAction.href} variant="contained" color={nextAction.color} endIcon={<ArrowForwardIcon />}>
+                {nextAction.label}
+              </ActionButton>
             </Stack>
           </CardContent>
         </Card>
 
-        <Card sx={{ borderColor: "primary.light" }}>
-          <CardContent>
-            <Stack spacing={2}>
-              <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
-                <Box>
-                  <Typography variant="h3">Daily Plan</Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {dailyPlan?.summary ?? "Generate a short prioritized plan from jobs, applications, evidence, outcomes, and profile health."}
-                  </Typography>
-                  {dailyPlan?.generatedAt ? (
-                    <Typography variant="caption" color="text.secondary">
-                      Generated {new Date(dailyPlan.generatedAt).toLocaleString()}
-                    </Typography>
-                  ) : null}
-                </Box>
-                <RunDailyPlanButton />
-              </Stack>
-              {dailyPlan?.actions?.length ? (
-                <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(3, 1fr)" }, gap: 1.5 }}>
-                  {dailyPlan.actions.slice(0, 6).map((action) => (
-                    <Box key={`${action.priority}-${action.title}`} sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.5, bgcolor: "background.paper" }}>
-                      <Stack spacing={1}>
-                        <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between" }}>
-                          <Chip size="small" color="primary" variant="outlined" label={`P${action.priority}`} />
-                          {typeof action.count === "number" ? <Chip size="small" label={action.count} /> : null}
-                        </Stack>
-                        <Typography sx={{ fontWeight: 850 }}>{action.title}</Typography>
-                        <Typography variant="body2" color="text.secondary">{action.detail}</Typography>
-                        <ActionButton href={action.href} size="small" endIcon={<OpenInNewIcon />}>Open</ActionButton>
-                      </Stack>
-                    </Box>
-                  ))}
-                </Box>
-              ) : null}
-              {dailyPlan?.blockers?.length ? (
-                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
-                  {dailyPlan.blockers.map((blocker) => <Chip key={blocker} size="small" color="warning" variant="outlined" label={blocker} />)}
-                </Stack>
-              ) : null}
-            </Stack>
-          </CardContent>
-        </Card>
+        <SearchRunCommandCenter initialRun={latestRun ? serializeSearchRun(latestRun) : null} />
 
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: "repeat(4, 1fr)" }, gap: 2 }}>
           <Metric label="Enabled profiles" value={profiles.length.toString()} helper="Active campaigns" />
@@ -177,8 +119,8 @@ export default async function DashboardPage() {
 
         <BulkPrepareControl defaultMinimumScore={85} defaultLimit={10} />
 
-        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", xl: "2fr 1fr" }, gap: 2 }}>
-          <Box>
+        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "minmax(0, 1fr)", xl: "minmax(0, 1.6fr) minmax(320px, 0.9fr)" }, gap: 2, alignItems: "start" }}>
+          <Box sx={{ minWidth: 0 }}>
             <Stack spacing={2}>
               <SectionTitle title="Needs Review" />
               {visibleNeedsReview.length === 0 ? (
@@ -190,18 +132,18 @@ export default async function DashboardPage() {
                   <Card key={match.id} sx={{ transition: "border-color 160ms ease, transform 160ms ease", "&:hover": { borderColor: "primary.main", transform: "translateY(-1px)" } }}>
                     <CardContent>
                       <Stack spacing={2}>
-                        <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between" }}>
-                          <Stack spacing={1}>
+                        <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between", minWidth: 0 }}>
+                          <Stack spacing={1} sx={{ minWidth: 0 }}>
                             <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
                               <ScoreChip score={match.overallScore} label={`${match.overallScore} score`} />
                               <Chip variant="outlined" label={match.jobSearchProfile.name} />
                             </Stack>
-                            <Box>
-                              <Typography variant="h2">{match.jobPosting.title}</Typography>
+                            <Box sx={{ minWidth: 0 }}>
+                              <Typography variant="h2" sx={{ overflowWrap: "anywhere" }}>{match.jobPosting.title}</Typography>
                               <Typography color="text.secondary">{match.jobPosting.company} · {match.jobPosting.location ?? "Unknown location"}</Typography>
                             </Box>
                           </Stack>
-                          <Stack direction="row" spacing={1} sx={{ alignItems: "flex-start" }}>
+                          <Stack direction="row" spacing={1} sx={{ alignItems: "flex-start", flexShrink: 0 }}>
                             <ActionButton postTo={`/api/jobs/${match.jobPosting.id}/reject`} body={{ matchId: match.id }} variant="outlined" color="secondary">Reject</ActionButton>
                             <ActionButton postTo={`/api/jobs/${match.jobPosting.id}/approve`} body={{ matchId: match.id }} variant="contained">Approve</ActionButton>
                           </Stack>
@@ -226,8 +168,83 @@ export default async function DashboardPage() {
             </Stack>
           </Box>
 
-          <Box>
+          <Box sx={{ minWidth: 0 }}>
             <Stack spacing={2}>
+              <Card sx={{ borderColor: agentUserRequests.length ? "warning.main" : "divider" }}>
+                <CardContent>
+                  <Stack spacing={2}>
+                    <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ justifyContent: "space-between", alignItems: { sm: "center" } }}>
+                      <Box>
+                        <Typography variant="h3">Needs Me</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          Agent blockers.
+                        </Typography>
+                      </Box>
+                      <ActionButton href="/needs-me" variant={agentUserRequests.length ? "contained" : "outlined"} color={agentUserRequests.length ? "warning" : "primary"} size="small">
+                        {agentUserRequests.length ? `Review ${agentUserRequests.length}` : "Open"}
+                      </ActionButton>
+                    </Stack>
+                    {agentUserRequests.length ? (
+                      <Stack spacing={1}>
+                        {agentUserRequests.slice(0, 2).map((request) => {
+                          const job = request.application?.jobPosting ?? request.jobPosting;
+                          return (
+                            <Box key={request.id} sx={{ borderTop: 1, borderColor: "divider", pt: 1 }}>
+                              <Stack spacing={0.75}>
+                                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+                                  <Chip size="small" color="warning" variant="outlined" label={agentUserRequestTypeLabel(request.type)} />
+                                  {job ? <Chip size="small" variant="outlined" label={job.company} /> : null}
+                                </Stack>
+                                <Typography variant="body2" sx={{ fontWeight: 800, overflowWrap: "anywhere" }}>{request.question}</Typography>
+                                <ActionButton href={agentUserRequestHref(request)} size="small" endIcon={<OpenInNewIcon />}>Open</ActionButton>
+                              </Stack>
+                            </Box>
+                          );
+                        })}
+                      </Stack>
+                    ) : null}
+                  </Stack>
+                </CardContent>
+              </Card>
+
+              <Card sx={{ borderColor: "primary.light" }}>
+                <CardContent>
+                  <Stack spacing={2}>
+                    <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ justifyContent: "space-between", alignItems: { sm: "center" } }}>
+                      <Box>
+                        <Typography variant="h3">Daily Plan</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {dailyPlan?.summary ?? "Generate a prioritized plan from current jobs and applications."}
+                        </Typography>
+                        {dailyPlan?.generatedAt ? (
+                          <Typography variant="caption" color="text.secondary">
+                            Generated {new Date(dailyPlan.generatedAt).toLocaleString()}
+                          </Typography>
+                        ) : null}
+                      </Box>
+                      <RunDailyPlanButton />
+                    </Stack>
+                    {dailyPlan?.actions?.length ? (
+                      <Stack spacing={1}>
+                        {dailyPlan.actions.slice(0, 3).map((action) => (
+                          <Box key={`${action.priority}-${action.title}`} sx={{ borderTop: 1, borderColor: "divider", pt: 1 }}>
+                            <Stack spacing={0.75}>
+                              <Stack direction="row" spacing={0.75} sx={{ alignItems: "center" }}>
+                                <Chip size="small" color="primary" variant="outlined" label={`P${action.priority}`} />
+                                {typeof action.count === "number" ? <Chip size="small" label={action.count} /> : null}
+                              </Stack>
+                              <Typography variant="body2" sx={{ fontWeight: 850 }}>{action.title}</Typography>
+                              <Typography variant="caption" color="text.secondary">{action.detail}</Typography>
+                              <ActionButton href={action.href} size="small" endIcon={<OpenInNewIcon />}>Open</ActionButton>
+                            </Stack>
+                          </Box>
+                        ))}
+                      </Stack>
+                    ) : null}
+                  </Stack>
+                </CardContent>
+              </Card>
+
               <SectionTitle title="Pipeline" />
               <Card>
                 <List disablePadding>
@@ -277,6 +294,100 @@ export default async function DashboardPage() {
 
 function dailyPlanOutput(value: unknown): DailyPlanOutput | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as DailyPlanOutput : null;
+}
+
+function serializeSearchRun(run: {
+  id: string;
+  status: string;
+  triggeredBy: string;
+  startedAt: Date;
+  finishedAt: Date | null;
+  jobsFetched: number;
+  jobsAfterDedupe: number;
+  jobsAfterFilters: number;
+  jobsSaved: number;
+  progress: unknown;
+}) {
+  return {
+    id: run.id,
+    status: run.status,
+    triggeredBy: run.triggeredBy,
+    startedAt: run.startedAt.toISOString(),
+    finishedAt: run.finishedAt?.toISOString() ?? null,
+    jobsFetched: run.jobsFetched,
+    jobsAfterDedupe: run.jobsAfterDedupe,
+    jobsAfterFilters: run.jobsAfterFilters,
+    jobsSaved: run.jobsSaved,
+    progress: Array.isArray(run.progress) ? run.progress as Array<{ at: string; message: string; stats?: { jobsFetched?: number; jobsAfterDedupe?: number; jobsAfterFilters?: number; jobsSaved?: number } }> : [],
+  };
+}
+
+function getNextAction({
+  agentUserRequestCount,
+  dailyPlan,
+  readyToApply,
+  needsReviewCount,
+  latestRunStartedAt,
+}: {
+  agentUserRequestCount: number;
+  dailyPlan: DailyPlanOutput | null;
+  readyToApply: number;
+  needsReviewCount: number;
+  latestRunStartedAt: Date | null;
+}) {
+  if (agentUserRequestCount > 0) {
+    return {
+      color: "warning" as const,
+      title: "Resolve the agent blocker",
+      detail: "An agent needs your answer before it can continue the workflow.",
+      href: "/needs-me",
+      label: "Open Needs Me",
+      count: agentUserRequestCount,
+    };
+  }
+
+  const dailyAction = dailyPlan?.actions?.[0];
+  if (dailyAction) {
+    return {
+      color: "primary" as const,
+      title: dailyAction.title,
+      detail: dailyAction.detail,
+      href: dailyAction.href,
+      label: "Start",
+      count: dailyAction.count,
+    };
+  }
+
+  if (readyToApply > 0) {
+    return {
+      color: "primary" as const,
+      title: "Work the Apply Sprint queue",
+      detail: "Application materials are ready. Start the assistant on the next ready application.",
+      href: "/applications/assistant",
+      label: "Open Apply Sprint",
+      count: readyToApply,
+    };
+  }
+
+  if (needsReviewCount > 0) {
+    return {
+      color: "primary" as const,
+      title: "Review matched jobs",
+      detail: "Approve strong matches so the app can generate packets and move them into Apply Sprint.",
+      href: "/jobs",
+      label: "Review jobs",
+      count: needsReviewCount,
+    };
+  }
+
+  const latestRunIsStale = !latestRunStartedAt || Date.now() - latestRunStartedAt.getTime() > 86_400_000;
+  return {
+    color: "primary" as const,
+    title: latestRunIsStale ? "Run job discovery" : "Check search results",
+    detail: latestRunIsStale ? "Refresh job discovery so the queue has current roles to score." : "Discovery is fresh. Check the latest results and approve strong matches.",
+    href: latestRunIsStale ? "/runs" : "/jobs",
+    label: latestRunIsStale ? "Run search" : "Open jobs",
+  };
 }
 
 function Metric({ label, value, helper }: { label: string; value: string; helper: string }) {

@@ -1,6 +1,7 @@
 import AccountTreeOutlinedIcon from "@mui/icons-material/AccountTreeOutlined";
 import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
 import BusinessOutlinedIcon from "@mui/icons-material/BusinessOutlined";
+import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutlineOutlined";
 import ContactPageOutlinedIcon from "@mui/icons-material/ContactPageOutlined";
 import ConnectWithoutContactOutlinedIcon from "@mui/icons-material/ConnectWithoutContactOutlined";
 import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
@@ -8,6 +9,7 @@ import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import PaidOutlinedIcon from "@mui/icons-material/PaidOutlined";
 import PlayCircleOutlineOutlinedIcon from "@mui/icons-material/PlayCircleOutlineOutlined";
 import PsychologyOutlinedIcon from "@mui/icons-material/PsychologyOutlined";
+import RadioButtonUncheckedIcon from "@mui/icons-material/RadioButtonUnchecked";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Card from "@mui/material/Card";
@@ -23,7 +25,6 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { ScoreChip } from "@/components/ui/score-chip";
 import { StatusChip } from "@/components/ui/status-chip";
-import { WorkflowGuide } from "@/components/ui/workflow-guide";
 import { jsonArray } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
 import { applicationAnswerEntries, packetApprovalChecklist, packetApprovalState } from "@/lib/applications/application-packets";
@@ -70,10 +71,13 @@ type InterviewPrepOutput = {
   role?: string;
   positioning?: string;
   likelyThemes?: string[];
+  likelyStages?: string[];
+  likelyAssessments?: string[];
   evidenceStories?: Array<{ title: string; evidenceRef: string; talkingPoint: string }>;
   risksToPrepare?: string[];
   questionsToAsk?: string[];
   followUpFocus?: string[];
+  sourceNotes?: string[];
 };
 
 type RecruiterQualityReview = {
@@ -129,6 +133,7 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
       include: {
         coverLetter: true,
         events: { orderBy: { createdAt: "desc" }, take: 8 },
+        interviewPrepTasks: { orderBy: [{ status: "asc" }, { priority: "asc" }, { createdAt: "asc" }] },
         applicationPackets: { orderBy: { updatedAt: "desc" }, take: 1 },
         jobPosting: {
           include: {
@@ -220,6 +225,23 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
     ...(qa?.unsupportedClaims ?? []),
     ...(qa?.styleViolations ?? []),
   ];
+  const workflowProgress = applicationWorkflowProgress({
+    applicationId: application.id,
+    jobPostingId: application.jobPostingId,
+    applicationStatus: application.status,
+    appliedAt: application.appliedAt,
+    packetStatus: packet?.status ?? null,
+    hasPacket: Boolean(packet),
+    hasResume: Boolean(application.resume),
+    hasCoverLetter: Boolean(application.coverLetter),
+    qaIssueCount: qaIssues.length,
+    canApprovePacket: Boolean(approvalState?.canApprove),
+    assistantLaunched: application.events.some((event) => {
+      const payload = event.payload as { note?: string } | null;
+      return payload?.note === "Local Playwright assistant launched. Manual submit checkpoint required.";
+    }),
+    hasAppliedOutcome: application.outcomes.some((outcome) => outcome.outcome === "APPLIED"),
+  });
 
   return (
     <AppShell>
@@ -238,7 +260,7 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
           }
         />
 
-        <WorkflowGuide active={application.status === "ready_to_apply" ? "sprint" : "applications"} title="Review packet before manual submission" />
+        <ApplicationProgressCard steps={workflowProgress.steps} nextAction={workflowProgress.nextAction} />
 
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(5, 1fr)" }, gap: 2 }}>
           <Metric label="Status" value={<StatusChip status={application.status} />} helper="Application workflow" />
@@ -574,12 +596,45 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
                 <Stack spacing={2}>
                   <Typography color="text.secondary">{interviewPrep.positioning}</Typography>
                   <SignalSection title="Likely themes" items={interviewPrep.likelyThemes ?? []} color="primary" />
+                  <PrepList title="Likely stages" items={interviewPrep.likelyStages ?? []} />
+                  <PrepList title="Likely assessments" items={interviewPrep.likelyAssessments ?? []} />
                   <SignalSection title="Risks to prepare" items={interviewPrep.risksToPrepare ?? []} color="warning" />
+                  {application.interviewPrepTasks.length ? (
+                    <Box>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 850, textTransform: "uppercase" }}>Prep tasks</Typography>
+                      <Stack spacing={1} sx={{ mt: 1 }}>
+                        {application.interviewPrepTasks.map((task) => (
+                          <Box key={task.id} sx={{ border: 1, borderColor: task.status === "DONE" ? "success.main" : "divider", borderRadius: 1, p: 1.25 }}>
+                            <Stack direction={{ xs: "column", md: "row" }} spacing={1} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
+                              <Box>
+                                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 0.5 }}>
+                                  <Chip size="small" color={task.status === "DONE" ? "success" : "primary"} variant={task.status === "DONE" ? "filled" : "outlined"} label={task.status === "DONE" ? "Done" : "Open"} />
+                                  <Chip size="small" variant="outlined" label={task.category} />
+                                  {task.evidenceRef ? <Chip size="small" variant="outlined" label={`Evidence ${task.evidenceRef}`} /> : null}
+                                </Stack>
+                                <Typography sx={{ fontWeight: 850 }}>{task.title}</Typography>
+                                <Typography variant="body2" color="text.secondary">{task.detail}</Typography>
+                              </Box>
+                              <ActionButton
+                                postTo={`/api/applications/${application.id}/interview-prep-tasks/${task.id}`}
+                                variant={task.status === "DONE" ? "outlined" : "contained"}
+                                color={task.status === "DONE" ? "secondary" : "success"}
+                                size="small"
+                              >
+                                {task.status === "DONE" ? "Reopen" : "Mark done"}
+                              </ActionButton>
+                            </Stack>
+                          </Box>
+                        ))}
+                      </Stack>
+                    </Box>
+                  ) : null}
                   <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", xl: "1fr 1fr" }, gap: 2 }}>
                     <PrepList title="Evidence stories" items={(interviewPrep.evidenceStories ?? []).map((story) => `${story.title}: ${story.talkingPoint}`)} />
                     <PrepList title="Questions to ask" items={interviewPrep.questionsToAsk ?? []} />
                   </Box>
                   <PrepList title="Follow-up focus" items={interviewPrep.followUpFocus ?? []} />
+                  <PrepList title="Prep sources" items={interviewPrep.sourceNotes ?? []} />
                 </Stack>
               ) : (
                 <EmptyState title="No interview prep yet" body="Generate a prep brief after the packet is ready or once an interview is scheduled." />
@@ -622,14 +677,26 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
               {application.events.length === 0 ? (
                 <Typography variant="body2" color="text.secondary">No events recorded yet.</Typography>
               ) : (
-                application.events.map((event) => (
-                  <Box key={event.id} sx={{ borderTop: 1, borderColor: "divider", pt: 1.25 }}>
-                    <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", alignItems: "center" }}>
-                      <Chip size="small" variant="outlined" label={event.type} />
-                      <Typography variant="caption" color="text.secondary">{event.createdAt.toLocaleString()}</Typography>
-                    </Stack>
-                  </Box>
-                ))
+                application.events.map((event) => {
+                  const summary = applicationEventSummary(event);
+                  return (
+                    <Box key={event.id} sx={{ borderTop: 1, borderColor: "divider", pt: 1.25 }}>
+                      <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ justifyContent: "space-between", alignItems: { sm: "flex-start" } }}>
+                        <Box>
+                          <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 0.75 }}>
+                            <Chip size="small" variant="outlined" label={summary.typeLabel} />
+                            {summary.chips.map((chip) => (
+                              <Chip key={`${event.id}-${chip}`} size="small" label={chip} />
+                            ))}
+                          </Stack>
+                          <Typography sx={{ fontWeight: 800 }}>{summary.title}</Typography>
+                          {summary.detail ? <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>{summary.detail}</Typography> : null}
+                        </Box>
+                        <Typography variant="caption" color="text.secondary">{event.createdAt.toLocaleString()}</Typography>
+                      </Stack>
+                    </Box>
+                  );
+                })
               )}
             </Stack>
           </CardContent>
@@ -649,6 +716,122 @@ function Metric({ label, value, helper }: { label: string; value: React.ReactNod
       </CardContent>
     </Card>
   );
+}
+
+type WorkflowStep = {
+  label: string;
+  detail: string;
+  complete: boolean;
+  current: boolean;
+};
+
+type WorkflowNextAction = {
+  href: string;
+  label: string;
+  detail: string;
+};
+
+function ApplicationProgressCard({ steps, nextAction }: { steps: WorkflowStep[]; nextAction: WorkflowNextAction }) {
+  return (
+    <Card sx={{ borderColor: "primary.main", bgcolor: "rgba(37, 99, 235, 0.06)" }}>
+      <CardContent>
+        <Stack spacing={2}>
+          <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
+            <Box>
+              <Typography variant="h3">Application progress</Typography>
+              <Typography variant="body2" color="text.secondary">{nextAction.detail}</Typography>
+            </Box>
+            <ActionButton href={nextAction.href} variant="contained">{nextAction.label}</ActionButton>
+          </Stack>
+          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(6, 1fr)" }, gap: 1 }}>
+            {steps.map((step) => (
+              <Box
+                key={step.label}
+                sx={{
+                  border: 1,
+                  borderColor: step.current ? "primary.main" : step.complete ? "success.main" : "divider",
+                  borderRadius: 1,
+                  p: 1.25,
+                  bgcolor: step.current ? "background.paper" : "transparent",
+                  minHeight: 112,
+                }}
+              >
+                <Stack spacing={0.75}>
+                  {step.complete ? <CheckCircleOutlineIcon color="success" fontSize="small" /> : <RadioButtonUncheckedIcon color={step.current ? "primary" : "disabled"} fontSize="small" />}
+                  <Typography sx={{ fontWeight: 850 }}>{step.label}</Typography>
+                  <Typography variant="caption" color="text.secondary">{step.detail}</Typography>
+                </Stack>
+              </Box>
+            ))}
+          </Box>
+        </Stack>
+      </CardContent>
+    </Card>
+  );
+}
+
+function applicationWorkflowProgress({
+  applicationId,
+  jobPostingId,
+  applicationStatus,
+  appliedAt,
+  packetStatus,
+  hasPacket,
+  hasResume,
+  hasCoverLetter,
+  qaIssueCount,
+  canApprovePacket,
+  assistantLaunched,
+  hasAppliedOutcome,
+}: {
+  applicationId: string;
+  jobPostingId: string;
+  applicationStatus: string;
+  appliedAt: Date | null;
+  packetStatus: string | null;
+  hasPacket: boolean;
+  hasResume: boolean;
+  hasCoverLetter: boolean;
+  qaIssueCount: number;
+  canApprovePacket: boolean;
+  assistantLaunched: boolean;
+  hasAppliedOutcome: boolean;
+}) {
+  const packetReady = hasPacket && hasResume && hasCoverLetter;
+  const packetApproved = packetStatus === "APPROVED" || packetStatus === "SUBMITTED" || applicationStatus === "ready_to_apply" || Boolean(appliedAt);
+  const submitted = Boolean(appliedAt) || hasAppliedOutcome || packetStatus === "SUBMITTED";
+  const steps: WorkflowStep[] = [
+    { label: "Review fit", detail: "Job is approved and has a tracker.", complete: true, current: false },
+    { label: "Generate packet", detail: packetReady ? "Resume and cover letter are saved." : "Prepare tailored materials.", complete: packetReady, current: !packetReady },
+    { label: "QA packet", detail: qaIssueCount ? `${qaIssueCount} review item${qaIssueCount === 1 ? "" : "s"} need attention.` : "Truth and style checks are clear.", complete: packetReady && qaIssueCount === 0, current: packetReady && qaIssueCount > 0 },
+    { label: "Approve packet", detail: packetApproved ? "Packet is approved for Apply Sprint." : "Approve after QA is clear.", complete: packetApproved, current: packetReady && qaIssueCount === 0 && !packetApproved },
+    { label: "Fill form", detail: assistantLaunched ? "Assistant has been launched." : "Launch the local assistant.", complete: assistantLaunched, current: packetApproved && !assistantLaunched },
+    { label: "Track outcome", detail: submitted ? "Applied outcome is recorded." : "Submit or record the next outcome.", complete: submitted, current: assistantLaunched && !submitted },
+  ];
+
+  const current = steps.find((step) => step.current) ?? steps.find((step) => !step.complete);
+  if (!packetReady) {
+    return {
+      steps,
+      nextAction: { href: `/jobs/${jobPostingId}`, label: "Prepare packet", detail: current?.detail ?? "Prepare application materials." },
+    };
+  }
+  if (canApprovePacket) {
+    return {
+      steps,
+      nextAction: { href: `/applications/${applicationId}`, label: "Approve packet", detail: "The packet is ready for your approval." },
+    };
+  }
+  if (packetApproved && !assistantLaunched) {
+    return {
+      steps,
+      nextAction: { href: "/applications/assistant", label: "Open Apply Sprint", detail: "Launch the local assistant to fill the employer form." },
+    };
+  }
+  return {
+    steps,
+    nextAction: { href: `/applications/${applicationId}`, label: submitted ? "Update outcome" : "Review application", detail: current?.detail ?? "Review the application workflow state." },
+  };
 }
 
 function MaterialCard({ title, icon, body, emptyTitle, emptyBody, actions }: { title: string; icon: React.ReactNode; body: string; emptyTitle: string; emptyBody: string; actions?: React.ReactNode }) {
@@ -739,6 +922,97 @@ function companyResearchOutput(value: unknown): CompanyResearchOutput | null {
 
 function compensationOpportunityOutput(value: unknown): CompensationOpportunityOutput | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as CompensationOpportunityOutput : null;
+}
+
+function applicationEventSummary(event: { type: string; payload: unknown }) {
+  const payload = isRecord(event.payload) ? event.payload : {};
+  const typeLabel = formatAction(event.type);
+
+  if (payload.source === "email_response_agent") {
+    const classification = typeof payload.classification === "string" ? formatAction(payload.classification) : "Email";
+    const subject = typeof payload.subject === "string" ? payload.subject : "No subject";
+    const from = typeof payload.from === "string" ? payload.from : "unknown sender";
+    const confidenceScore = typeof payload.confidenceScore === "number" ? payload.confidenceScore : null;
+    return {
+      typeLabel,
+      title: `Email classified: ${classification}`,
+      detail: `${subject} from ${from}`,
+      chips: [
+        ...(confidenceScore === null ? [] : [`${confidenceScore}% confidence`]),
+        payload.actionRequired ? "Needs action" : "No action",
+        ...(typeof payload.recommendedOutcome === "string" ? [formatOutcome(payload.recommendedOutcome)] : []),
+      ],
+    };
+  }
+
+  if (payload.source === "agent_user_request") {
+    const requestType = typeof payload.requestType === "string" ? formatAction(payload.requestType) : "Agent request";
+    const status = typeof payload.status === "string" ? formatAction(payload.status) : "Resolved";
+    const question = typeof payload.question === "string" ? payload.question : null;
+    return {
+      typeLabel,
+      title: `${requestType} ${status.toLowerCase()}`,
+      detail: question,
+      chips: [payload.answerSaved ? "Answer saved" : "No answer saved"],
+    };
+  }
+
+  if (payload.source === "application_automation_run") {
+    const status = typeof payload.status === "string" ? formatAction(payload.status) : "Assistant updated";
+    const blockerMessage = typeof payload.blockerMessage === "string" ? payload.blockerMessage : null;
+    const logPath = typeof payload.logPath === "string" ? payload.logPath : null;
+    const actionCount = typeof payload.actionCount === "number" ? payload.actionCount : 0;
+    const screenshotCount = typeof payload.screenshotCount === "number" ? payload.screenshotCount : 0;
+    return {
+      typeLabel,
+      title: `Assistant run ${status.toLowerCase()}`,
+      detail: blockerMessage ?? (logPath ? `Assistant log: ${logPath}` : null),
+      chips: [
+        ...(actionCount ? [`${actionCount} action${actionCount === 1 ? "" : "s"}`] : []),
+        ...(screenshotCount ? [`${screenshotCount} screenshot${screenshotCount === 1 ? "" : "s"}`] : []),
+        ...(typeof payload.blockerType === "string" ? [formatAction(payload.blockerType)] : []),
+      ],
+    };
+  }
+
+  if (typeof payload.note === "string") {
+    return {
+      typeLabel,
+      title: payload.note,
+      detail: typeof payload.logPath === "string" ? `Assistant log: ${payload.logPath}` : null,
+      chips: typeof payload.automationRunId === "string" ? ["Assistant run"] : [],
+    };
+  }
+
+  if (event.type === "status_changed") {
+    const status = typeof payload.status === "string" ? formatAction(payload.status) : "Status updated";
+    return {
+      typeLabel,
+      title: status,
+      detail: typeof payload.applicationUrl === "string" ? `Application URL: ${payload.applicationUrl}` : null,
+      chips: payload.manualSubmissionRequired ? ["Manual checkpoint"] : [],
+    };
+  }
+
+  if (event.type === "applied") {
+    return {
+      typeLabel,
+      title: "Application marked applied",
+      detail: typeof payload.notes === "string" ? payload.notes : null,
+      chips: [],
+    };
+  }
+
+  return {
+    typeLabel,
+    title: typeLabel,
+    detail: typeof payload.message === "string" ? payload.message : null,
+    chips: [],
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function formatAction(action: string) {

@@ -10,6 +10,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "smoke:pages": "tsx scripts/smoke-pages.ts",
+    "chrome-extension:package": "tsx scripts/package-chrome-extension.ts",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
     "db:logs": "docker compose logs -f postgres",

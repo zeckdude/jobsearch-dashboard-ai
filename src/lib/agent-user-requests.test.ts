@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentUserRequestHref, agentUserRequestTypeLabel, buildAgentUserRequestData, buildAgentUserRequestNotification } from "@/lib/agent-user-requests";
+import { agentUserRequestHref, agentUserRequestTypeLabel, buildAgentUserRequestData, buildAgentUserRequestNotification, buildAgentUserRequestResolutionEventPayload } from "@/lib/agent-user-requests";
 
 describe("agent user requests", () => {
   it("builds open user request data from an agent blocker", () => {
@@ -49,5 +49,24 @@ describe("agent user requests", () => {
       href: "/applications/app_1",
     });
     expect(notification.body).toContain("The agent is paused until this is resolved.");
+  });
+
+  it("builds a non-sensitive application event when a blocker is resolved", () => {
+    expect(buildAgentUserRequestResolutionEventPayload({
+      requestId: "request_1",
+      requestType: "UNKNOWN_ANSWER",
+      question: "What should I answer for sponsorship?",
+      status: "ANSWERED",
+      answerSaved: true,
+      resolvedAt: new Date("2026-05-15T18:00:00.000Z"),
+    })).toEqual({
+      source: "agent_user_request",
+      requestId: "request_1",
+      requestType: "UNKNOWN_ANSWER",
+      question: "What should I answer for sponsorship?",
+      status: "ANSWERED",
+      answerSaved: true,
+      resolvedAt: "2026-05-15T18:00:00.000Z",
+    });
   });
 });

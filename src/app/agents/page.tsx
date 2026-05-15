@@ -126,6 +126,13 @@ export default async function AgentReviewBoardPage() {
     .filter((item) => item.notes.applicationQa?.status === "NEEDS_REVIEW")
     .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
     .slice(0, 8);
+  const nextAction = agentsNextAction({
+    evidenceNeedsReviewCount: evidenceNeedsReview.length,
+    materialReviewCount: materialReviewItems.length,
+    jobRecommendationCount: jobEvaluations.length,
+    hasProfileOptimizerRun: Boolean(latestProfileOutput),
+    hasDailyPlan: Boolean(latestDailyPlan),
+  });
 
   return (
     <AppShell>
@@ -135,6 +142,24 @@ export default async function AgentReviewBoardPage() {
           title="Agent Review Board"
           description="Review the system's recommendations, warnings, evidence gaps, and generated-material QA before making application decisions."
         />
+
+        <Card sx={{ borderColor: nextAction.color === "warning" ? "warning.main" : "primary.main", bgcolor: nextAction.color === "warning" ? "rgba(245, 158, 11, 0.08)" : "rgba(37, 99, 235, 0.08)" }}>
+          <CardContent>
+            <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
+              <Box>
+                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 1 }}>
+                  <Chip size="small" color={nextAction.color} label="Next action" />
+                  {typeof nextAction.count === "number" ? <Chip size="small" variant="outlined" label={nextAction.count} /> : null}
+                </Stack>
+                <Typography variant="h3">{nextAction.title}</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{nextAction.detail}</Typography>
+              </Box>
+              <ActionButton href={nextAction.href} variant="contained" color={nextAction.color} startIcon={nextAction.icon}>
+                {nextAction.label}
+              </ActionButton>
+            </Stack>
+          </CardContent>
+        </Card>
 
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(4, 1fr)" }, gap: 2 }}>
           <Metric icon={<InsightsOutlinedIcon />} label="Agent runs" value={runs.length.toString()} helper="Recent decisions logged" />
@@ -333,6 +358,72 @@ export default async function AgentReviewBoardPage() {
       </Stack>
     </AppShell>
   );
+}
+
+function agentsNextAction({
+  evidenceNeedsReviewCount,
+  materialReviewCount,
+  jobRecommendationCount,
+  hasProfileOptimizerRun,
+  hasDailyPlan,
+}: {
+  evidenceNeedsReviewCount: number;
+  materialReviewCount: number;
+  jobRecommendationCount: number;
+  hasProfileOptimizerRun: boolean;
+  hasDailyPlan: boolean;
+}) {
+  if (evidenceNeedsReviewCount > 0) {
+    return {
+      title: "Review uncertain evidence",
+      detail: "Generation quality depends on approved evidence. Clear uncertain evidence before trusting new materials.",
+      label: "Open evidence",
+      href: "/evidence?confidence=NEEDS_REVIEW",
+      color: "warning" as const,
+      icon: <FactCheckOutlinedIcon />,
+      count: evidenceNeedsReviewCount,
+    };
+  }
+  if (materialReviewCount > 0) {
+    return {
+      title: "Review material QA warnings",
+      detail: "Generated materials have QA warnings that should be resolved before applications move forward.",
+      label: "Review materials",
+      href: "/resumes/generated",
+      color: "warning" as const,
+      icon: <ReportProblemOutlinedIcon />,
+      count: materialReviewCount,
+    };
+  }
+  if (jobRecommendationCount > 0) {
+    return {
+      title: "Act on job recommendations",
+      detail: "High-priority job evaluations are ready for approval, rejection, or deeper review.",
+      label: "Open jobs",
+      href: "/jobs",
+      color: "primary" as const,
+      icon: <InsightsOutlinedIcon />,
+      count: jobRecommendationCount,
+    };
+  }
+  if (!hasProfileOptimizerRun) {
+    return {
+      title: "Run profile optimizer",
+      detail: "No search profile optimization is recorded yet. Analyze campaigns before scaling discovery.",
+      label: "Open profiles",
+      href: "/profiles",
+      color: "primary" as const,
+      icon: <AutoFixHighOutlinedIcon />,
+    };
+  }
+  return {
+    title: hasDailyPlan ? "Work the daily plan" : "Generate the daily plan",
+    detail: hasDailyPlan ? "The command center has a plan. Start there for prioritized actions." : "Generate a short prioritized plan from jobs, evidence, applications, outcomes, and profile health.",
+    label: "Open dashboard",
+    href: "/dashboard",
+    color: "primary" as const,
+    icon: <InsightsOutlinedIcon />,
+  };
 }
 
 function Metric({ icon, label, value, helper }: { icon: React.ReactNode; label: string; value: string; helper: string }) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyJobEmail } from "@/lib/email-response-agent";
+import { buildEmailApplicationEventPayload, classifyJobEmail } from "@/lib/email-response-agent";
 
 describe("email response agent", () => {
   it("classifies rejection emails without requiring user action", () => {
@@ -41,6 +41,33 @@ describe("email response agent", () => {
       classification: "CODING_ASSESSMENT",
       actionRequired: true,
       recommendedOutcome: "TECH_SCREEN",
+    });
+  });
+
+  it("builds a compact application timeline payload for matched emails", () => {
+    const classification = classifyJobEmail({
+      subject: "Next step with Acme",
+      snippet: "Can you share availability to schedule a call?",
+      bodyText: null,
+    });
+
+    expect(buildEmailApplicationEventPayload({
+      emailMessageId: "email_1",
+      from: "recruiter@acme.example",
+      subject: "Next step with Acme",
+      receivedAt: new Date("2026-05-15T12:00:00.000Z"),
+      classification,
+    })).toEqual({
+      source: "email_response_agent",
+      emailMessageId: "email_1",
+      from: "recruiter@acme.example",
+      subject: "Next step with Acme",
+      receivedAt: "2026-05-15T12:00:00.000Z",
+      classification: "SCHEDULING_REQUEST",
+      confidenceScore: 84,
+      actionRequired: true,
+      recommendedOutcome: "RECRUITER_SCREEN",
+      rationale: "Detected interview or scheduling language.",
     });
   });
 });

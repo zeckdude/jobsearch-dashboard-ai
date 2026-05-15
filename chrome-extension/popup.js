@@ -1,17 +1,37 @@
-const API_URL = "http://localhost:3000/api/jobs/capture";
+const DEFAULT_APP_URL = "http://localhost:3000";
 const fields = {
   title: document.querySelector("#title"),
   company: document.querySelector("#company"),
   location: document.querySelector("#location"),
   description: document.querySelector("#description"),
+  apiUrl: document.querySelector("#apiUrl"),
   token: document.querySelector("#token"),
 };
 const statusElement = document.querySelector("#status");
 const captureButton = document.querySelector("#capture");
+const openJobLink = document.querySelector("#openJob");
 let capturedPayload = null;
 
 function setStatus(message) {
   statusElement.textContent = message;
+}
+
+function normalizeAppUrl(value) {
+  return (value || DEFAULT_APP_URL).trim().replace(/\/+$/, "");
+}
+
+function captureEndpoint() {
+  return `${normalizeAppUrl(fields.apiUrl.value)}/api/jobs/capture`;
+}
+
+function setOpenJobLink(jobUrl) {
+  if (!jobUrl) {
+    openJobLink.hidden = true;
+    openJobLink.href = "#";
+    return;
+  }
+  openJobLink.href = `${normalizeAppUrl(fields.apiUrl.value)}${jobUrl}`;
+  openJobLink.hidden = false;
 }
 
 function currentPayload() {
@@ -32,7 +52,8 @@ async function getActiveTab() {
 
 async function loadCapture() {
   try {
-    const stored = await chrome.storage.local.get(["jobSearchOsToken"]);
+    const stored = await chrome.storage.local.get(["jobSearchOsToken", "jobSearchOsAppUrl"]);
+    fields.apiUrl.value = stored.jobSearchOsAppUrl || DEFAULT_APP_URL;
     fields.token.value = stored.jobSearchOsToken || "";
     const tab = await getActiveTab();
     if (!tab?.id) throw new Error("No active tab found.");
@@ -42,6 +63,7 @@ async function loadCapture() {
     fields.company.value = payload.company || "";
     fields.location.value = payload.location || "";
     fields.description.value = payload.description || "";
+    setOpenJobLink(null);
     setStatus("Review fields before saving.");
   } catch (error) {
     setStatus(error instanceof Error ? error.message : "Unable to inspect this tab.");
@@ -53,8 +75,9 @@ async function saveCapture() {
   setStatus("Saving...");
   try {
     const token = fields.token.value.trim();
-    await chrome.storage.local.set({ jobSearchOsToken: token });
-    const response = await fetch(API_URL, {
+    const appUrl = normalizeAppUrl(fields.apiUrl.value);
+    await chrome.storage.local.set({ jobSearchOsToken: token, jobSearchOsAppUrl: appUrl });
+    const response = await fetch(captureEndpoint(), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -64,8 +87,11 @@ async function saveCapture() {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || "Unable to save job.");
-    setStatus(payload.message || "Saved.");
+    setOpenJobLink(payload.jobUrl);
+    const matchText = Number.isFinite(payload.matchCount) ? ` ${payload.matchCount} matching profiles.` : "";
+    setStatus(`${payload.message || "Saved."}${matchText}`);
   } catch (error) {
+    setOpenJobLink(null);
     setStatus(error instanceof Error ? error.message : "Unable to save job.");
   } finally {
     captureButton.disabled = false;

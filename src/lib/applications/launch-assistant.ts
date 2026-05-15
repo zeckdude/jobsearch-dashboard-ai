@@ -23,7 +23,16 @@ export type LaunchAssistantResult = {
 export async function launchApplicationAssistant(applicationId: string, origin: string): Promise<LaunchAssistantResult> {
   const application = await prisma.application.findUnique({
     where: { id: applicationId },
-    include: { coverLetter: true, jobPosting: true, resume: true },
+    include: {
+      agentUserRequests: {
+        where: { status: "OPEN" },
+        orderBy: { createdAt: "desc" },
+        take: 1,
+      },
+      coverLetter: true,
+      jobPosting: true,
+      resume: true,
+    },
   });
 
   if (!application) throw new Error("Application not found.");
@@ -33,6 +42,9 @@ export async function launchApplicationAssistant(applicationId: string, origin: 
   if (!application.jobPosting.applicationUrl) throw new Error("This job does not have an application URL.");
   if (!application.resume || !application.coverLetter) {
     throw new Error("A generated resume and cover letter are required before launching the assistant.");
+  }
+  if (application.agentUserRequests[0]) {
+    throw new Error(`Resolve this blocker before launching the assistant: ${application.agentUserRequests[0].question}`);
   }
 
   const scriptPath = path.join(process.cwd(), "scripts", "playwright_assistant.py");

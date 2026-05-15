@@ -52,7 +52,7 @@ export function AddEvidenceNoteForm() {
 
   return (
     <>
-      <Card>
+      <Card id="add-evidence-note">
         <CardContent>
           <Stack spacing={2}>
             <Stack spacing={0.5}>

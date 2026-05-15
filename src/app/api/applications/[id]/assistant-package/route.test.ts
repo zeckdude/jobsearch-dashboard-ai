@@ -26,6 +26,7 @@ describe("GET /api/applications/[id]/assistant-package", () => {
       reasons: ["Auto-submit is disabled in settings."],
       effectiveAutoSubmitEnabled: false,
       override: null,
+      companyPolicy: null,
       settings: {
         autoSubmitEnabled: false,
         requireApprovedPacket: true,

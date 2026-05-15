@@ -1,4 +1,9 @@
+import AutoFixHighOutlinedIcon from "@mui/icons-material/AutoFixHighOutlined";
+import ExploreOutlinedIcon from "@mui/icons-material/ExploreOutlined";
+import RocketLaunchOutlinedIcon from "@mui/icons-material/RocketLaunchOutlined";
+import Box from "@mui/material/Box";
 import Card from "@mui/material/Card";
+import CardContent from "@mui/material/CardContent";
 import Chip from "@mui/material/Chip";
 import Stack from "@mui/material/Stack";
 import Table from "@mui/material/Table";
@@ -9,10 +14,10 @@ import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
 import Typography from "@mui/material/Typography";
 import { AppShell } from "@/app/app-shell";
+import { ActionButton } from "@/components/action-button";
 import { PageHeader } from "@/components/ui/page-header";
 import { ScoreChip } from "@/components/ui/score-chip";
 import { formatStatus } from "@/components/ui/status-chip";
-import { WorkflowGuide } from "@/components/ui/workflow-guide";
 import { jsonArray } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
 import { ProfileCreateForm } from "./profile-create-form";
@@ -49,18 +54,40 @@ export default async function ProfilesPage() {
     },
     orderBy: { createdAt: "desc" },
   });
+  const nextAction = profileNextAction({
+    profileCount: profiles.length,
+    enabledCount: profiles.filter((profile) => profile.enabled).length,
+    optimizerRunAt: latestOptimizerRun?.createdAt ?? null,
+    expansionRunAt: latestExpansionRun?.createdAt ?? null,
+  });
 
   return (
     <AppShell>
       <Stack spacing={3}>
         <PageHeader
-          eyebrow="Campaigns"
+          eyebrow="Search strategy"
           title="Search Profiles"
-          description="Step 1: define what a good job looks like. Profiles control titles, location, remote preference, salary floor, and match threshold before any search run starts."
+          description="Manage reusable search strategies, target titles, filters, salary floors, and profile-health recommendations used by discovery and scoring agents."
           actions={<ProfileCreateForm />}
         />
 
-        <WorkflowGuide active="profiles" title="Step 1 of 5: set the search intent" />
+        <Card sx={{ borderColor: "primary.main", bgcolor: "rgba(37, 99, 235, 0.08)" }}>
+          <CardContent>
+            <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
+              <Box>
+                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 1 }}>
+                  <Chip size="small" color="primary" label="Next action" />
+                  {typeof nextAction.count === "number" ? <Chip size="small" variant="outlined" label={nextAction.count} /> : null}
+                </Stack>
+                <Typography variant="h3">{nextAction.title}</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{nextAction.detail}</Typography>
+              </Box>
+              <ActionButton href={nextAction.href} postTo={nextAction.postTo} variant="contained" startIcon={nextAction.icon}>
+                {nextAction.label}
+              </ActionButton>
+            </Stack>
+          </CardContent>
+        </Card>
 
         <ProfileSuggestionPanel />
         <ProfileOptimizerPanel latest={isRecord(latestOptimizerRun?.outputJson) ? latestOptimizerRun.outputJson as OptimizerOutput : null} />
@@ -143,6 +170,71 @@ export default async function ProfilesPage() {
       </Stack>
     </AppShell>
   );
+}
+
+function profileNextAction({
+  profileCount,
+  enabledCount,
+  optimizerRunAt,
+  expansionRunAt,
+}: {
+  profileCount: number;
+  enabledCount: number;
+  optimizerRunAt: Date | null;
+  expansionRunAt: Date | null;
+}) {
+  if (profileCount === 0) {
+    return {
+      title: "Create your first search profile",
+      detail: "Define target titles, location, remote preference, and scoring threshold before running discovery.",
+      label: "Use create profile",
+      href: "/profiles",
+      icon: <RocketLaunchOutlinedIcon />,
+    };
+  }
+  if (enabledCount === 0) {
+    return {
+      title: "Enable a search profile",
+      detail: "All profiles are disabled. Enable at least one campaign before running discovery.",
+      label: "Review profiles",
+      href: "/profiles",
+      icon: <RocketLaunchOutlinedIcon />,
+      count: profileCount,
+    };
+  }
+  if (isOlderThanDays(optimizerRunAt, 7)) {
+    return {
+      title: "Analyze profile health",
+      detail: "Run the optimizer to find overlap, noisy profiles, and weak targeting before spending time on new jobs.",
+      label: "Analyze profiles",
+      postTo: "/api/profiles/optimize",
+      icon: <AutoFixHighOutlinedIcon />,
+      count: enabledCount,
+    };
+  }
+  if (isOlderThanDays(expansionRunAt, 14)) {
+    return {
+      title: "Find search gaps",
+      detail: "Compare active profiles against the curated company source list and identify missing focused campaigns.",
+      label: "Find gaps",
+      postTo: "/api/profiles/expand",
+      icon: <ExploreOutlinedIcon />,
+      count: enabledCount,
+    };
+  }
+  return {
+    title: "Run job discovery",
+    detail: "Profiles are configured and recently analyzed. Move to discovery to fetch and score current roles.",
+    label: "Open runs",
+    href: "/runs",
+    icon: <RocketLaunchOutlinedIcon />,
+    count: enabledCount,
+  };
+}
+
+function isOlderThanDays(date: Date | null, days: number) {
+  if (!date) return true;
+  return Date.now() - date.getTime() > days * 86_400_000;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

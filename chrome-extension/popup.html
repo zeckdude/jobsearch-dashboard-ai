@@ -30,11 +30,16 @@
       <details>
         <summary>Local settings</summary>
         <label>
+          App URL
+          <input id="apiUrl" type="url" autocomplete="off">
+        </label>
+        <label>
           Extension token
           <input id="token" type="password" autocomplete="off">
         </label>
       </details>
       <p id="status" role="status"></p>
+      <a id="openJob" class="open-job" href="#" target="_blank" rel="noreferrer" hidden>Open captured job</a>
       <button id="capture" type="button">Save to Job Search OS</button>
     </main>
     <script src="popup.js"></script>

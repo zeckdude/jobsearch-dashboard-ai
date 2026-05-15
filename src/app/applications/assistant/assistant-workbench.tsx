@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import PlayCircleOutlineOutlinedIcon from "@mui/icons-material/PlayCircleOutlineOutlined";
 import RefreshOutlinedIcon from "@mui/icons-material/RefreshOutlined";
 import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
@@ -28,6 +29,17 @@ type ReadyApplication = {
   score: number | null;
   resumeId: string | null;
   coverLetterId: string | null;
+  automationRun: {
+    id: string;
+    status: "RUNNING" | "BLOCKED" | "NEEDS_USER" | "READY_TO_SUBMIT" | "SUBMITTED" | "FAILED";
+    blockerMessage: string | null;
+    startedAt: string;
+    finishedAt: string | null;
+  } | null;
+  blocker: {
+    id: string;
+    question: string;
+  } | null;
   assistantLaunched: boolean;
 };
 
@@ -73,7 +85,24 @@ type QuestionHelperResponse = {
   }>;
 };
 
-export function AssistantWorkbench({ applications }: { applications: ReadyApplication[] }) {
+type AtsBlockerSummary = {
+  provider: string;
+  totalRuns: number;
+  blockedRuns: number;
+  failedRuns: number;
+  readyRuns: number;
+  submittedRuns: number;
+  blockerTypes: Array<{ type: string; count: number }>;
+  examples: Array<{
+    applicationId: string;
+    company: string;
+    title: string;
+    blockerType: string | null;
+    blockerMessage: string | null;
+  }>;
+};
+
+export function AssistantWorkbench({ applications, atsBlockers }: { applications: ReadyApplication[]; atsBlockers: AtsBlockerSummary[] }) {
   const router = useRouter();
   const [selectedId, setSelectedId] = useState(applications[0]?.id ?? "");
   const [launch, setLaunch] = useState<LaunchResponse | null>(null);
@@ -92,6 +121,13 @@ export function AssistantWorkbench({ applications }: { applications: ReadyApplic
     [applications, deletedIds],
   );
   const selected = useMemo(() => visibleApplications.find((application) => application.id === selectedId), [visibleApplications, selectedId]);
+  const selectedBlocker = selected?.blocker ?? null;
+  const selectedRunState = selected?.automationRun ? automationRunState(selected.automationRun) : null;
+  const selectedPrimaryAction = selected ? primarySprintAction(selected, Boolean(launch?.application?.id ?? selectedId)) : null;
+  const queueProgress = useMemo(() => visibleApplications.map((application) => ({
+    ...application,
+    progress: sprintProgressForApplication(application),
+  })), [visibleApplications]);
 
   async function launchSelected(next = false) {
     const endpoint = next ? "/api/applications/next-ready/launch-assistant" : `/api/applications/${selectedId}/launch-assistant`;
@@ -207,9 +243,9 @@ export function AssistantWorkbench({ applications }: { applications: ReadyApplic
   return (
     <>
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "380px 1fr" }, gap: 2 }}>
-        <Card>
-          <CardContent>
-            <Stack spacing={2}>
+      <Card>
+        <CardContent>
+          <Stack spacing={2}>
               <Box>
                 <Typography variant="h3">Assistant queue</Typography>
                 <Typography variant="body2" color="text.secondary">
@@ -237,7 +273,9 @@ export function AssistantWorkbench({ applications }: { applications: ReadyApplic
                   <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
                     <Chip size="small" color="success" variant="outlined" label="Resume ready" />
                     <Chip size="small" color="secondary" variant="outlined" label="Cover letter ready" />
+                    {selectedRunState ? <Chip size="small" color={selectedRunState.color} variant={selectedRunState.variant} label={selectedRunState.label} /> : null}
                     {selected.assistantLaunched ? <Chip size="small" color="warning" variant="outlined" label="Assistant launched" /> : null}
+                    {selected.blocker ? <Chip size="small" color="warning" label="Needs answer" /> : null}
                     {selected.score ? <Chip size="small" label={`${selected.score} score`} /> : null}
                   </Stack>
                 </Stack>
@@ -245,45 +283,120 @@ export function AssistantWorkbench({ applications }: { applications: ReadyApplic
                 <Alert severity="info">No ready applications. Use Auto-prepare from Dashboard or Applications first.</Alert>
               )}
               <Divider />
-              <Stack spacing={1}>
-                <Button
-                  variant="contained"
-                  color="success"
-                  startIcon={<PlayCircleOutlineOutlinedIcon />}
-                  disabled={!selectedId || loading}
-                  onClick={() => void launchSelected(false)}
+              {selectedBlocker ? (
+                <Alert
+                  severity="warning"
+                  action={
+                    <Button component={Link} href="/needs-me" color="inherit" size="small">
+                      Answer
+                    </Button>
+                  }
                 >
-                  Launch selected
-                </Button>
-                <Button
-                  variant="outlined"
-                  startIcon={<PlayCircleOutlineOutlinedIcon />}
-                  disabled={loading}
-                  onClick={() => void launchSelected(true)}
-                >
-                  Launch next unlaunched
-                </Button>
-                <Button
-                  variant="contained"
-                  color="primary"
-                  disabled={markingApplied || !(launch?.application?.id ?? selectedId)}
-                  onClick={() => void markApplied()}
-                >
-                  {markingApplied ? "Updating..." : "Mark as applied"}
-                </Button>
-                <Button
-                  variant="outlined"
-                  color="error"
-                  startIcon={<DeleteOutlineOutlinedIcon />}
-                  disabled={!selected || deleting || loading}
-                  onClick={() => void deleteSelected()}
-                >
-                  {deleting ? "Deleting..." : "Delete from queue"}
-                </Button>
-              </Stack>
+                  {selectedBlocker.question}
+                </Alert>
+              ) : null}
+              {selectedRunState?.running ? (
+                <Alert severity="info">
+                  Assistant is running in the background. You can leave this page and return here to refresh the log.
+                </Alert>
+              ) : selectedRunState?.message ? (
+                <Alert severity={selectedRunState.alert}>{selectedRunState.message}</Alert>
+              ) : null}
+              {selectedPrimaryAction ? (
+                <Stack spacing={1}>
+                  <Button
+                    component={selectedPrimaryAction.href ? Link : "button"}
+                    href={selectedPrimaryAction.href}
+                    variant="contained"
+                    color={selectedPrimaryAction.color}
+                    startIcon={selectedPrimaryAction.kind === "launch" ? <PlayCircleOutlineOutlinedIcon /> : undefined}
+                    disabled={selectedPrimaryAction.disabled || loading || markingApplied}
+                    onClick={selectedPrimaryAction.kind === "launch"
+                      ? () => void launchSelected(false)
+                      : selectedPrimaryAction.kind === "mark_applied"
+                        ? () => void markApplied()
+                        : undefined}
+                  >
+                    {selectedPrimaryAction.loadingLabel && (loading || markingApplied) ? selectedPrimaryAction.loadingLabel : selectedPrimaryAction.label}
+                  </Button>
+                  <Typography variant="body2" color="text.secondary">{selectedPrimaryAction.detail}</Typography>
+                </Stack>
+              ) : null}
+              <Divider />
+              <Box>
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 850, textTransform: "uppercase" }}>Secondary actions</Typography>
+                <Stack spacing={1} sx={{ mt: 1 }}>
+                  <Button
+                    variant="outlined"
+                    startIcon={<PlayCircleOutlineOutlinedIcon />}
+                    disabled={loading}
+                    onClick={() => void launchSelected(true)}
+                  >
+                    Launch next unlaunched
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    color="error"
+                    startIcon={<DeleteOutlineOutlinedIcon />}
+                    disabled={!selected || deleting || loading}
+                    onClick={() => void deleteSelected()}
+                  >
+                    {deleting ? "Deleting..." : "Delete from queue"}
+                  </Button>
+                </Stack>
+              </Box>
               <Alert severity="warning">
-                Employer forms cannot be safely embedded and controlled inside this app because they are cross-origin. The assistant opens a local browser, fills/uploads, then stops before submit.
+                {selectedBlocker
+                  ? "Resolve the open blocker before launching this application again."
+                  : "Employer forms cannot be safely embedded and controlled inside this app because they are cross-origin. The assistant opens a local browser, fills/uploads, then stops before submit."}
               </Alert>
+              {queueProgress.length ? (
+                <>
+                  <Divider />
+                  <Box>
+                    <Typography variant="h3">Queue progress</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Each item shows the next workflow state before it leaves Apply Sprint.
+                    </Typography>
+                  </Box>
+                  <Stack spacing={1}>
+                    {queueProgress.slice(0, 8).map((application) => (
+                      <Box
+                        key={application.id}
+                        sx={{
+                          border: 1,
+                          borderColor: application.id === selectedId ? "primary.main" : "divider",
+                          borderRadius: 1,
+                          p: 1.25,
+                          bgcolor: application.id === selectedId ? "rgba(37, 99, 235, 0.06)" : "background.paper",
+                        }}
+                      >
+                        <Stack spacing={1}>
+                          <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+                            <Box sx={{ minWidth: 0 }}>
+                              <Typography sx={{ fontWeight: 850 }} noWrap>{application.company}</Typography>
+                              <Typography variant="caption" color="text.secondary" sx={{ display: "block" }} noWrap>{application.title}</Typography>
+                            </Box>
+                            <Chip size="small" color={application.progress.color} label={application.progress.label} />
+                          </Stack>
+                          <LinearProgress
+                            variant="determinate"
+                            value={application.progress.value}
+                            color={application.progress.color}
+                            sx={{ height: 6, borderRadius: 1 }}
+                          />
+                          <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", justifyContent: "space-between", alignItems: "center" }}>
+                            <Typography variant="caption" color="text.secondary">{application.progress.detail}</Typography>
+                            <Button size="small" variant={application.id === selectedId ? "contained" : "outlined"} onClick={() => setSelectedId(application.id)}>
+                              Select
+                            </Button>
+                          </Stack>
+                        </Stack>
+                      </Box>
+                    ))}
+                  </Stack>
+                </>
+              ) : null}
             </Stack>
           </CardContent>
         </Card>
@@ -424,6 +537,47 @@ export function AssistantWorkbench({ applications }: { applications: ReadyApplic
           </Stack>
         </CardContent>
       </Card>
+      {atsBlockers.length ? (
+        <Card>
+          <CardContent>
+            <Stack spacing={1.5}>
+              <Box>
+                <Typography variant="h3">ATS blocker signals</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Recent assistant runs grouped by ATS provider.
+                </Typography>
+              </Box>
+              <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(3, 1fr)" }, gap: 1.5 }}>
+                {atsBlockers.slice(0, 6).map((provider) => (
+                  <Box key={provider.provider} sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.5 }}>
+                    <Stack spacing={1}>
+                      <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between" }}>
+                        <Typography sx={{ fontWeight: 850 }}>{provider.provider}</Typography>
+                        <Chip size="small" color={provider.blockedRuns || provider.failedRuns ? "warning" : "success"} label={`${provider.totalRuns} runs`} />
+                      </Stack>
+                      <Typography variant="body2" color="text.secondary">
+                        {provider.blockedRuns} blocked · {provider.failedRuns} failed · {provider.readyRuns} ready · {provider.submittedRuns} submitted
+                      </Typography>
+                      {provider.blockerTypes.length ? (
+                        <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+                          {provider.blockerTypes.slice(0, 3).map((item) => (
+                            <Chip key={`${provider.provider}-${item.type}`} size="small" variant="outlined" label={`${item.type}: ${item.count}`} />
+                          ))}
+                        </Stack>
+                      ) : null}
+                      {provider.examples[0] ? (
+                        <Typography variant="body2" color="text.secondary">
+                          Latest: {provider.examples[0].company} · {provider.examples[0].blockerMessage ?? provider.examples[0].blockerType}
+                        </Typography>
+                      ) : null}
+                    </Stack>
+                  </Box>
+                ))}
+              </Box>
+            </Stack>
+          </CardContent>
+        </Card>
+      ) : null}
       <Snackbar open={Boolean(notice)} autoHideDuration={6000} onClose={() => setNotice("")}>
         <Alert severity={launch?.ok ? "success" : "info"} variant="filled" onClose={() => setNotice("")}>
           {notice}
@@ -431,4 +585,156 @@ export function AssistantWorkbench({ applications }: { applications: ReadyApplic
       </Snackbar>
     </>
   );
+}
+
+function sprintProgressForApplication(application: ReadyApplication): {
+  label: string;
+  detail: string;
+  value: number;
+  color: "primary" | "success" | "warning" | "error";
+} {
+  const runState = application.automationRun ? automationRunState(application.automationRun) : null;
+  if (runState?.running) {
+    return {
+      label: "Running",
+      detail: "Assistant is working in the background. Refresh the log for current output.",
+      value: 70,
+      color: "primary",
+    };
+  }
+  if (application.automationRun?.status === "BLOCKED" || application.automationRun?.status === "FAILED") {
+    return {
+      label: application.automationRun.status === "FAILED" ? "Failed" : "Blocked",
+      detail: application.automationRun.blockerMessage ?? "Review the assistant log or Needs Me queue.",
+      value: 60,
+      color: application.automationRun.status === "FAILED" ? "error" : "warning",
+    };
+  }
+  if (application.blocker) {
+    return {
+      label: "Blocked",
+      detail: "Needs your answer before the assistant should run again.",
+      value: 60,
+      color: "warning",
+    };
+  }
+  if (application.assistantLaunched) {
+    return {
+      label: "Review",
+      detail: "Assistant launched. Review the employer form, submit, then mark applied.",
+      value: 80,
+      color: "success",
+    };
+  }
+  if (application.resumeId && application.coverLetterId) {
+    return {
+      label: "Ready",
+      detail: "Materials are ready. Launch the assistant when you are ready to work this item.",
+      value: 50,
+      color: "primary",
+    };
+  }
+  return {
+    label: "Needs packet",
+    detail: "Resume and cover letter are required before Apply Sprint.",
+    value: 25,
+    color: "error",
+  };
+}
+
+function automationRunState(run: NonNullable<ReadyApplication["automationRun"]>): {
+  label: string;
+  color: "primary" | "success" | "warning" | "error" | "info";
+  variant: "filled" | "outlined";
+  running: boolean;
+  alert: "info" | "success" | "warning" | "error";
+  message?: string;
+} {
+  if (run.status === "RUNNING") {
+    return { label: "Running", color: "primary", variant: "filled", running: true, alert: "info" };
+  }
+  if (run.status === "READY_TO_SUBMIT") {
+    return {
+      label: "Ready to submit",
+      color: "success",
+      variant: "outlined",
+      running: false,
+      alert: "success",
+      message: "Assistant finished filling known fields. Review the browser form, submit manually, then mark applied.",
+    };
+  }
+  if (run.status === "SUBMITTED") {
+    return {
+      label: "Submitted",
+      color: "success",
+      variant: "filled",
+      running: false,
+      alert: "success",
+      message: "Assistant recorded a submitted run. Confirm the outcome is tracked.",
+    };
+  }
+  if (run.status === "FAILED") {
+    return {
+      label: "Failed",
+      color: "error",
+      variant: "filled",
+      running: false,
+      alert: "error",
+      message: run.blockerMessage ?? "Assistant run failed. Review the log before trying again.",
+    };
+  }
+  return {
+    label: "Blocked",
+    color: "warning",
+    variant: "filled",
+    running: false,
+    alert: "warning",
+    message: run.blockerMessage ?? "Assistant run is blocked and needs review.",
+  };
+}
+
+function primarySprintAction(application: ReadyApplication, canMarkApplied: boolean): {
+  kind: "answer" | "launch" | "mark_applied";
+  label: string;
+  detail: string;
+  color: "primary" | "success" | "warning";
+  href?: string;
+  disabled?: boolean;
+  loadingLabel?: string;
+} {
+  if (application.blocker) {
+    return {
+      kind: "answer",
+      label: "Answer blocker",
+      detail: "Resolve the open question before launching the assistant again.",
+      color: "warning",
+      href: "/needs-me",
+    };
+  }
+  if (application.automationRun?.status === "RUNNING") {
+    return {
+      kind: "launch",
+      label: "Assistant running",
+      detail: "The local browser assistant is already working in the background.",
+      color: "primary",
+      disabled: true,
+    };
+  }
+  if (application.assistantLaunched) {
+    return {
+      kind: "mark_applied",
+      label: "Mark as applied",
+      loadingLabel: "Updating...",
+      detail: "Use this after you review the employer form and submit it.",
+      color: "primary",
+      disabled: !canMarkApplied,
+    };
+  }
+  return {
+    kind: "launch",
+    label: "Launch assistant",
+    loadingLabel: "Launching...",
+    detail: "Open the local browser assistant to fill known fields and upload materials.",
+    color: "success",
+  };
 }

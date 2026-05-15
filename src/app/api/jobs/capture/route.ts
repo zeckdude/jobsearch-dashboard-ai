@@ -49,6 +49,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       ...result,
+      jobUrl: `/jobs/${result.job.id}`,
+      matchCount: result.matches.length,
       message: result.created ? "Captured job from browser." : "Updated existing captured job.",
     }, { status: result.created ? 201 : 200 });
   } catch (error) {

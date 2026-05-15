@@ -55,3 +55,25 @@ export async function createEmbedding(input: string) {
     vector: response.data[0]?.embedding ?? [],
   };
 }
+
+export async function createTextResponse({
+  system,
+  input,
+}: {
+  system: string;
+  input: string;
+}) {
+  if (!isOpenAiConfigured()) return null;
+
+  client ??= new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+  const response = await client.responses.create({
+    model: process.env.OPENAI_MODEL ?? DEFAULT_MODEL,
+    input: [
+      { role: "system", content: system },
+      { role: "user", content: input },
+    ],
+  });
+
+  return response.output_text?.trim() || null;
+}

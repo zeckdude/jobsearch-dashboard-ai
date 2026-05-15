@@ -1,5 +1,7 @@
 import SourceOutlinedIcon from "@mui/icons-material/SourceOutlined";
+import TravelExploreOutlinedIcon from "@mui/icons-material/TravelExploreOutlined";
 import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
 import Chip from "@mui/material/Chip";
@@ -8,6 +10,7 @@ import Typography from "@mui/material/Typography";
 import { AppShell } from "@/app/app-shell";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
+import { RunSearchControl } from "@/components/run-search-control";
 import { StatusChip } from "@/components/ui/status-chip";
 import { configToPrismaJson, defaultCompanySourceConfig, normalizeCompanySourceConfig } from "@/lib/job-search/company-source-config";
 import { prisma } from "@/lib/prisma";
@@ -42,6 +45,11 @@ export default async function SourcesPage({ searchParams }: { searchParams?: { q
     priority: item,
     count: config.companies.filter((company) => company.priority === item).length,
   }));
+  const nextAction = sourcesNextAction({
+    enabled: source.enabled,
+    companyCount: config.companies.length,
+    priorityOneCount: priorityCounts[0]?.count ?? 0,
+  });
 
   return (
     <AppShell>
@@ -52,6 +60,28 @@ export default async function SourcesPage({ searchParams }: { searchParams?: { q
           description="Manage the curated company source list used to probe direct careers pages and ATS feeds. This is a source list, not a claim that each company is currently hiring."
         />
 
+        <Card sx={{ borderColor: nextAction.color === "warning" ? "warning.main" : "primary.main", bgcolor: nextAction.color === "warning" ? "rgba(245, 158, 11, 0.08)" : "rgba(37, 99, 235, 0.08)" }}>
+          <CardContent>
+            <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
+              <Box>
+                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 1 }}>
+                  <Chip size="small" color={nextAction.color} label="Next action" />
+                  {typeof nextAction.count === "number" ? <Chip size="small" variant="outlined" label={nextAction.count} /> : null}
+                </Stack>
+                <Typography variant="h3">{nextAction.title}</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{nextAction.detail}</Typography>
+              </Box>
+              {nextAction.kind === "search" ? (
+                <RunSearchControl compact />
+              ) : (
+                <Button href={nextAction.href} variant="contained" color={nextAction.color} startIcon={nextAction.icon}>
+                  {nextAction.label}
+                </Button>
+              )}
+            </Stack>
+          </CardContent>
+        </Card>
+
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(4, 1fr)" }, gap: 2 }}>
           <Metric label="Status" value={<StatusChip status={source.enabled ? "configured" : "provider_missing"} />} helper={source.enabled ? "Included in search runs" : "Paused"} />
           <Metric label="Companies" value={config.companies.length.toString()} helper={`${visibleCompanies.length} visible with current filters`} />
@@ -59,7 +89,7 @@ export default async function SourcesPage({ searchParams }: { searchParams?: { q
           <Metric label="Max fetched" value={config.maxFetch.toString()} helper={`${config.maxCompanies} companies per run`} />
         </Box>
 
-        <Card>
+        <Card id="source-settings">
           <CardContent>
             <Stack spacing={2}>
               <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
@@ -137,6 +167,42 @@ export default async function SourcesPage({ searchParams }: { searchParams?: { q
       </Stack>
     </AppShell>
   );
+}
+
+function sourcesNextAction({ enabled, companyCount, priorityOneCount }: { enabled: boolean; companyCount: number; priorityOneCount: number }) {
+  if (!enabled) {
+    return {
+      kind: "link",
+      title: "Enable company-source discovery",
+      detail: "The curated company source list is paused. Enable it before expecting direct careers-page and ATS feed searches.",
+      label: "Review settings",
+      href: "#source-settings",
+      color: "warning" as const,
+      icon: <SourceOutlinedIcon />,
+      count: companyCount,
+    };
+  }
+  if (companyCount === 0) {
+    return {
+      kind: "link",
+      title: "Seed company sources",
+      detail: "No companies are configured. Add or restore the curated source list before running discovery.",
+      label: "Review settings",
+      href: "#source-settings",
+      color: "warning" as const,
+      icon: <SourceOutlinedIcon />,
+      count: 0,
+    };
+  }
+  return {
+    kind: "search",
+    title: "Run company-source discovery",
+    detail: `Search direct company sources, starting with ${priorityOneCount} priority-one companies and the active search profiles.`,
+    label: "Run search",
+    color: "primary" as const,
+    icon: <TravelExploreOutlinedIcon />,
+    count: companyCount,
+  };
 }
 
 function Metric({ label, value, helper }: { label: string; value: React.ReactNode; helper: string }) {

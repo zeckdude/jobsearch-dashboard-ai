@@ -16,7 +16,6 @@ import { BulkPrepareControl } from "@/components/bulk-prepare-control";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusChip, formatStatus } from "@/components/ui/status-chip";
-import { WorkflowGuide } from "@/components/ui/workflow-guide";
 import { prisma } from "@/lib/prisma";
 import { ApplicationCreateForm } from "./application-create-form";
 import { ApplicationDeleteButton } from "./application-delete-button";
@@ -40,21 +39,48 @@ export default async function ApplicationsPage() {
       take: 50,
     }),
   ]);
+  const nextAction = applicationsNextAction({
+    approvedCount: applications.filter((application) => application.status === "approved").length,
+    readyCount: applications.filter((application) => application.status === "ready_to_apply").length,
+    availableMatchCount: matches.length,
+  });
 
   return (
     <AppShell>
       <Stack spacing={3}>
         <PageHeader
-          eyebrow="Ready queue"
+          eyebrow="Application control"
           title="Applications"
-          description="Step 4: work from complete packages. Ready-to-apply items have a resume and cover letter, then move into Apply Sprint for manual submission."
+          description="Track approved roles from packet generation through assistant fill, follow-up reminders, interview prep, outcomes, and company-specific automation policy."
           actions={<ApplicationCreateForm jobs={matches.map((match) => ({
             id: match.jobPostingId,
             matchId: match.id,
             label: `${match.jobPosting.company} · ${match.jobPosting.title}`,
           }))} />}
         />
-        <WorkflowGuide active="applications" title="Step 4 of 5: choose the next complete package" />
+        <Card sx={{ borderColor: nextAction.color === "success" ? "success.main" : "primary.main", bgcolor: nextAction.color === "success" ? "rgba(16, 185, 129, 0.08)" : "rgba(37, 99, 235, 0.08)" }}>
+          <CardContent>
+            <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
+              <Box>
+                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 1 }}>
+                  <Chip size="small" color={nextAction.color} label="Next action" />
+                  {typeof nextAction.count === "number" ? <Chip size="small" variant="outlined" label={nextAction.count} /> : null}
+                </Stack>
+                <Typography variant="h3">{nextAction.title}</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{nextAction.detail}</Typography>
+              </Box>
+              <ActionButton
+                href={nextAction.href}
+                postTo={nextAction.postTo}
+                variant="contained"
+                color={nextAction.color}
+                startIcon={nextAction.icon}
+              >
+                {nextAction.label}
+              </ActionButton>
+            </Stack>
+          </CardContent>
+        </Card>
         <Card>
           <CardContent>
             <Stack spacing={1.5}>
@@ -145,7 +171,7 @@ export default async function ApplicationsPage() {
                                 </ActionButton>
                                 <MarkAppliedButton applicationId={application.id} />
                                 <Typography variant="caption" color="text.secondary">
-                                  Launch the assistant, submit manually on the employer site, then mark this item applied.
+                                  Launch the assistant, review the employer form, then mark this item applied after submission.
                                 </Typography>
                               </Stack>
                             </>
@@ -167,4 +193,48 @@ export default async function ApplicationsPage() {
       </Stack>
     </AppShell>
   );
+}
+
+function applicationsNextAction({ approvedCount, readyCount, availableMatchCount }: { approvedCount: number; readyCount: number; availableMatchCount: number }) {
+  if (readyCount > 0) {
+    return {
+      title: "Work Apply Sprint",
+      detail: "Ready applications have resume and cover letter materials. Open the sprint console to launch the assistant and track submission.",
+      label: "Open sprint console",
+      href: "/applications/assistant",
+      color: "success" as const,
+      icon: <BoltOutlinedIcon />,
+      count: readyCount,
+    };
+  }
+  if (approvedCount > 0) {
+    return {
+      title: "Prepare application packets",
+      detail: "Approved applications need tailored materials before they can move into Apply Sprint.",
+      label: "Prepare packets",
+      postTo: "/api/applications/packets/backfill",
+      color: "primary" as const,
+      icon: <FactCheckOutlinedIcon />,
+      count: approvedCount,
+    };
+  }
+  if (availableMatchCount > 0) {
+    return {
+      title: "Create an application tracker",
+      detail: "Approved matches are available. Create an application item before generating materials.",
+      label: "Create application",
+      href: "/jobs?status=approved",
+      color: "primary" as const,
+      icon: <FactCheckOutlinedIcon />,
+      count: availableMatchCount,
+    };
+  }
+  return {
+    title: "Review jobs first",
+    detail: "No application work is ready. Approve strong job matches, then return here to generate packets.",
+    label: "Review jobs",
+    href: "/jobs",
+    color: "primary" as const,
+    icon: <FactCheckOutlinedIcon />,
+  };
 }

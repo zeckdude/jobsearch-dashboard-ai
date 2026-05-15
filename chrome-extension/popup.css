@@ -88,6 +88,18 @@ button {
   padding: 10px 12px;
 }
 
+.open-job {
+  display: inline-flex;
+  width: fit-content;
+  color: #184f90;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.open-job:hover {
+  text-decoration: underline;
+}
+
 button:disabled {
   cursor: wait;
   opacity: 0.65;

@@ -46,6 +46,20 @@ type SettingsClientProps = {
     sinceDays: number;
     endpoint: string;
     secretConfigured: boolean;
+    gmailConfigured: boolean;
+    outlookConfigured: boolean;
+    gmailMissing: string[];
+    outlookMissing: string[];
+    gmailCallbackUrl: string;
+    outlookCallbackUrl: string;
+    oauthConnections: Array<{
+      id: string;
+      provider: string;
+      emailAddress: string | null;
+      status: string;
+      lastSyncAt: string | null;
+      updatedAt: string;
+    }>;
   };
   sourceSettings: {
     companySourceEnabled: boolean;
@@ -101,13 +115,25 @@ type SettingsClientProps = {
     maxRunAgeMinutes: number;
     allowDemographicSubmission: boolean;
   };
+  companyAutomationPolicies: Array<{
+    id: string;
+    company: string;
+    autoSubmitMode: "INHERIT" | "ALLOW" | "BLOCK";
+    notes: string | null;
+  }>;
 };
 
-export function SettingsClient({ initialSettings, aiSettings, emailSyncSettings, sourceSettings, profileSettings, latestGithubReview, cronSettings, automationSettings }: SettingsClientProps) {
+export function SettingsClient({ initialSettings, aiSettings, emailSyncSettings, sourceSettings, profileSettings, latestGithubReview, cronSettings, automationSettings, companyAutomationPolicies: initialCompanyAutomationPolicies }: SettingsClientProps) {
   const [settings, setSettings] = useState(initialSettings);
   const [profile, setProfile] = useState(profileSettings);
   const [cron, setCron] = useState(cronSettings);
   const [automation, setAutomation] = useState(automationSettings);
+  const [companyPolicies, setCompanyPolicies] = useState(initialCompanyAutomationPolicies);
+  const [companyPolicyDraft, setCompanyPolicyDraft] = useState({
+    company: "",
+    autoSubmitMode: "BLOCK" as "INHERIT" | "ALLOW" | "BLOCK",
+    notes: "",
+  });
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -284,6 +310,32 @@ export function SettingsClient({ initialSettings, aiSettings, emailSyncSettings,
     setNotice(body.skipped ? body.reason : "Scheduled search queued.");
   }
 
+  async function saveCompanyPolicy() {
+    setSaving(true);
+    setNotice("");
+    setError("");
+    try {
+      const response = await fetch("/api/settings/company-automation", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(companyPolicyDraft),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error ?? "Unable to save company policy.");
+
+      setCompanyPolicies((current) => {
+        const withoutExisting = current.filter((policy) => policy.id !== body.policy.id);
+        return [...withoutExisting, body.policy].sort((left, right) => left.company.localeCompare(right.company));
+      });
+      setCompanyPolicyDraft({ company: "", autoSubmitMode: "BLOCK", notes: "" });
+      setNotice(body.message ?? "Company automation policy saved.");
+    } catch (policyError) {
+      setError(policyError instanceof Error ? policyError.message : "Unable to save company policy.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function toggleCronEnabled(enabled: boolean) {
     setCronDirty(true);
     setCron((current) => ({
@@ -312,7 +364,7 @@ export function SettingsClient({ initialSettings, aiSettings, emailSyncSettings,
 
   return (
     <Stack spacing={2}>
-      <Card>
+      <Card id="settings-ai">
         <CardContent>
           <Stack spacing={2}>
             <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between" }}>
@@ -335,7 +387,37 @@ export function SettingsClient({ initialSettings, aiSettings, emailSyncSettings,
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="settings-tools">
+        <CardContent>
+          <Stack spacing={2}>
+            <Box>
+              <Typography variant="h3">Admin and supporting tools</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                These pages support the agent workflow but no longer need to be in the primary navigation.
+              </Typography>
+            </Box>
+            <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
+              {[
+                { href: "/profiles", label: "Search profiles" },
+                { href: "/evidence", label: "Evidence library" },
+                { href: "/sources", label: "Company sources" },
+                { href: "/agents", label: "Agent board" },
+                { href: "/resumes", label: "Materials workspace" },
+                { href: "/resumes/generated", label: "Generated materials" },
+                { href: "/networking", label: "Networking" },
+                { href: "/outcomes", label: "Outcome analytics" },
+                { href: "/runs", label: "Search runs" },
+              ].map((tool) => (
+                <Button key={tool.href} component={Link} href={tool.href} variant="outlined" size="small">
+                  {tool.label}
+                </Button>
+              ))}
+            </Stack>
+          </Stack>
+        </CardContent>
+      </Card>
+
+      <Card id="settings-email-sync">
         <CardContent>
           <Stack spacing={2}>
             <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between" }}>
@@ -359,11 +441,61 @@ export function SettingsClient({ initialSettings, aiSettings, emailSyncSettings,
             <Typography variant="body2" color="text.secondary">
               Endpoint: {emailSyncSettings.endpoint}. {emailSyncSettings.secretConfigured ? "EMAIL_SYNC_SECRET is required for requests." : "No EMAIL_SYNC_SECRET is configured, so local calls do not require a bearer token."}
             </Typography>
+            <Stack spacing={1.5} sx={{ borderTop: 1, borderColor: "divider", pt: 2 }}>
+              <Box>
+                <Typography sx={{ fontWeight: 850 }}>Gmail / Outlook OAuth</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  OAuth is approved for this app. These connectors use read-only mailbox access and feed the same email response agent as IMAP.
+                </Typography>
+              </Box>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+                <Button
+                  component={Link}
+                  href="/api/email/oauth/gmail/start"
+                  variant="outlined"
+                  disabled={!emailSyncSettings.gmailConfigured}
+                >
+                  Connect Gmail
+                </Button>
+                <Button
+                  component={Link}
+                  href="/api/email/oauth/outlook/start"
+                  variant="outlined"
+                  disabled={!emailSyncSettings.outlookConfigured}
+                >
+                  Connect Outlook
+                </Button>
+              </Stack>
+              {emailSyncSettings.gmailMissing.length || emailSyncSettings.outlookMissing.length ? (
+                <Alert severity="info">
+                  {emailSyncSettings.gmailMissing.length ? `Gmail needs ${emailSyncSettings.gmailMissing.join(", ")}. ` : "Gmail is ready to connect. "}
+                  {emailSyncSettings.outlookMissing.length ? `Outlook needs ${emailSyncSettings.outlookMissing.join(", ")}.` : "Outlook is ready to connect."}
+                </Alert>
+              ) : null}
+              <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, 1fr)" }, gap: 1 }}>
+                <TextField fullWidth label="Gmail callback URL" value={emailSyncSettings.gmailCallbackUrl} disabled />
+                <TextField fullWidth label="Outlook callback URL" value={emailSyncSettings.outlookCallbackUrl} disabled />
+              </Box>
+              {emailSyncSettings.oauthConnections.length ? (
+                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+                  {emailSyncSettings.oauthConnections.map((connection) => (
+                    <Chip
+                      key={connection.id}
+                      color={connection.status === "CONNECTED" ? "success" : "warning"}
+                      variant="outlined"
+                      label={`${connection.provider}: ${connection.status.toLowerCase()}`}
+                    />
+                  ))}
+                </Stack>
+              ) : (
+                <Typography variant="body2" color="text.secondary">No OAuth mailbox is connected yet.</Typography>
+              )}
+            </Stack>
           </Stack>
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="settings-automation">
         <CardContent>
           <Stack spacing={2}>
             <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between" }}>
@@ -436,11 +568,61 @@ export function SettingsClient({ initialSettings, aiSettings, emailSyncSettings,
             <Typography variant="body2" color="text.secondary">
               Even when enabled, the local assistant skips submit if it sees CAPTCHA, unresolved required fields, unknown custom answers, or a blocked automation run.
             </Typography>
+            <Stack spacing={1.5} sx={{ borderTop: 1, borderColor: "divider", pt: 2 }}>
+              <Box>
+                <Typography sx={{ fontWeight: 850 }}>Company auto-submit policies</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Application-specific overrides still win. Company policies are for known employers where you always want to allow or block gated auto-submit.
+                </Typography>
+              </Box>
+              <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1.4fr 0.8fr 1.4fr auto" }, gap: 1 }}>
+                <TextField
+                  fullWidth
+                  label="Company"
+                  value={companyPolicyDraft.company}
+                  onChange={(event) => setCompanyPolicyDraft({ ...companyPolicyDraft, company: event.target.value })}
+                />
+                <TextField
+                  select
+                  fullWidth
+                  label="Mode"
+                  value={companyPolicyDraft.autoSubmitMode}
+                  onChange={(event) => setCompanyPolicyDraft({ ...companyPolicyDraft, autoSubmitMode: event.target.value as "INHERIT" | "ALLOW" | "BLOCK" })}
+                >
+                  <MenuItem value="BLOCK">Block</MenuItem>
+                  <MenuItem value="ALLOW">Allow</MenuItem>
+                  <MenuItem value="INHERIT">Inherit</MenuItem>
+                </TextField>
+                <TextField
+                  fullWidth
+                  label="Notes"
+                  value={companyPolicyDraft.notes}
+                  onChange={(event) => setCompanyPolicyDraft({ ...companyPolicyDraft, notes: event.target.value })}
+                />
+                <Button variant="outlined" disabled={saving || !companyPolicyDraft.company.trim()} onClick={saveCompanyPolicy}>
+                  Save
+                </Button>
+              </Box>
+              {companyPolicies.length ? (
+                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+                  {companyPolicies.map((policy) => (
+                    <Chip
+                      key={policy.id}
+                      color={policy.autoSubmitMode === "ALLOW" ? "success" : policy.autoSubmitMode === "BLOCK" ? "error" : "default"}
+                      variant="outlined"
+                      label={`${policy.company}: ${policy.autoSubmitMode.toLowerCase()}`}
+                    />
+                  ))}
+                </Stack>
+              ) : (
+                <Typography variant="body2" color="text.secondary">No company policies yet.</Typography>
+              )}
+            </Stack>
           </Stack>
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="settings-company-sources">
         <CardContent>
           <Stack spacing={2}>
             <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between" }}>
@@ -471,7 +653,7 @@ export function SettingsClient({ initialSettings, aiSettings, emailSyncSettings,
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="settings-cron">
         <CardContent>
           <Stack spacing={2}>
             <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between" }}>
@@ -555,7 +737,7 @@ export function SettingsClient({ initialSettings, aiSettings, emailSyncSettings,
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="settings-demographics">
         <CardContent>
           <Stack spacing={2}>
             <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between" }}>
@@ -602,7 +784,7 @@ export function SettingsClient({ initialSettings, aiSettings, emailSyncSettings,
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="settings-profile-links">
         <CardContent>
           <Stack spacing={2}>
             <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between" }}>
@@ -626,7 +808,7 @@ export function SettingsClient({ initialSettings, aiSettings, emailSyncSettings,
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="settings-github">
         <CardContent>
           <Stack spacing={2}>
             <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between" }}>
@@ -701,7 +883,7 @@ export function SettingsClient({ initialSettings, aiSettings, emailSyncSettings,
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="settings-notifications">
         <CardContent>
           <Stack spacing={3}>
             <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>

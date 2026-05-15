@@ -118,6 +118,14 @@ DEMOGRAPHIC_FIELD_PATTERNS = {
 }
 SUBMIT_PATTERNS = re.compile(r"submit|send application|apply now|complete application|finish", re.I)
 CAPTCHA_PATTERNS = re.compile(r"captcha|recaptcha|hcaptcha|verify you are human", re.I)
+SUBMIT_CONFIRMATION_PATTERNS = re.compile(
+    r"application (has been )?(submitted|received)|"
+    r"thank you for (applying|your application)|"
+    r"we (have )?received your application|"
+    r"confirmation (number|id)|"
+    r"application complete",
+    re.I,
+)
 CLOSED_JOB_PATTERNS = re.compile(
     r"not found|404 error|posting.*closed|posting.*removed|job.*closed|job.*removed|couldn.t find anything here",
     re.I,
@@ -232,7 +240,7 @@ def main() -> int:
         if auto_submit_allowed:
             submitted = attempt_auto_submit(page, form_contexts, inventory_after, selected_answers_text)
             if submitted:
-                print("Auto-submit clicked after safety checks passed.")
+                print("Auto-submit confirmed after safety checks passed.")
                 capture_submit_confirmation(page, workdir)
             else:
                 print("Auto-submit skipped because a safety check did not pass. Review every field and submit manually only if correct.")
@@ -525,6 +533,7 @@ def detect_fields(page: Any) -> list[dict[str, str]]:
                 "category": category,
                 "label": descriptor[:140] or "(unlabeled field)",
                 "status": status,
+                "selector": stable_field_selector(element),
             })
         except Exception:
             continue
@@ -550,7 +559,30 @@ def print_field_inventory(title: str, fields: list[dict[str, str]]) -> None:
         return
     for field in fields:
         context = f" | {field['context']}" if field.get("context") else ""
-        print(f"- {field['category']}: {field['status']} | {field['type']}{context} | {field['label']}")
+        selector = f" | selector: {field['selector']}" if field.get("selector") else ""
+        print(f"- {field['category']}: {field['status']} | {field['type']}{context}{selector} | {field['label']}")
+
+
+def stable_field_selector(element: Any) -> str:
+    try:
+        return element.evaluate(
+            """node => {
+              const tag = node.tagName.toLowerCase();
+              const cssEscape = value => {
+                if (window.CSS && window.CSS.escape) return window.CSS.escape(value);
+                return String(value).replace(/["\\\\]/g, '\\\\$&');
+              };
+              const id = node.getAttribute('id');
+              if (id) return `${tag}#${cssEscape(id)}`;
+              const name = node.getAttribute('name');
+              if (name) return `${tag}[name="${cssEscape(name)}"]`;
+              const aria = node.getAttribute('aria-label');
+              if (aria) return `${tag}[aria-label="${cssEscape(aria)}"]`;
+              return tag;
+            }"""
+        )
+    except Exception:
+        return ""
 
 
 def field_category(descriptor: str) -> str:
@@ -926,7 +958,32 @@ def attempt_auto_submit(page: Any, contexts: list[Any], inventory: list[dict[str
     print(f"Clicking submit control: {descriptor[:120] or 'unlabeled submit control'}")
     submit.click(timeout=3000)
     page.wait_for_timeout(2500)
-    return True
+    if submit_confirmation_detected(page):
+        return True
+
+    refreshed_contexts = application_contexts(page)
+    if find_submit_control(refreshed_contexts) is not None:
+        print("Auto-submit skipped: secondary confirmation or review step detected after the first submit click.")
+        return False
+
+    print("Auto-submit skipped: final submission confirmation was not detected after the submit click.")
+    return False
+
+
+def submit_confirmation_detected(page: Any) -> bool:
+    try:
+        body_text = page.inner_text("body", timeout=5000)
+    except Exception:
+        body_text = ""
+    try:
+        title = page.title(timeout=2000)
+    except Exception:
+        title = ""
+    try:
+        url = page.url
+    except Exception:
+        url = ""
+    return bool(SUBMIT_CONFIRMATION_PATTERNS.search(f"{body_text}\n{title}\n{url}"))
 
 
 def capture_submit_confirmation(page: Any, workdir: Path) -> None:
@@ -953,19 +1010,12 @@ def capture_submit_confirmation(page: Any, workdir: Path) -> None:
 
 
 def summarize_confirmation_text(text: str) -> str:
-    patterns = [
-        r"application (has been )?(submitted|received)",
-        r"thank you for (applying|your application)",
-        r"we (have )?received your application",
-        r"confirmation (number|id)[:\s#-]*[a-z0-9-]+",
-    ]
     lowered = text.lower()
-    for pattern in patterns:
-        match = re.search(pattern, lowered, re.I)
-        if match:
-            start = max(0, match.start() - 80)
-            end = min(len(text), match.end() + 180)
-            return text[start:end].strip()
+    match = SUBMIT_CONFIRMATION_PATTERNS.search(lowered)
+    if match:
+        start = max(0, match.start() - 80)
+        end = min(len(text), match.end() + 180)
+        return text[start:end].strip()
     return text[:240].strip()
 
 

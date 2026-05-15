@@ -33,6 +33,9 @@ export async function POST(request: Request) {
             { applicationUrl: { contains: "remoteok.com", mode: "insensitive" } },
           ],
         },
+        agentUserRequests: {
+          none: { status: "OPEN" },
+        },
       },
       include: {
         events: {

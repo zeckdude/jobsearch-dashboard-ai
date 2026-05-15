@@ -1,5 +1,6 @@
 import MarkChatUnreadOutlinedIcon from "@mui/icons-material/MarkChatUnreadOutlined";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
+import PriorityHighOutlinedIcon from "@mui/icons-material/PriorityHighOutlined";
 import Box from "@mui/material/Box";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
@@ -11,11 +12,13 @@ import { ActionButton } from "@/components/action-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { agentUserRequestHref, agentUserRequestTypeLabel, listOpenAgentUserRequests } from "@/lib/agent-user-requests";
+import { RequestAnswerForm } from "./request-answer-form";
 
 export const dynamic = "force-dynamic";
 
 export default async function NeedsMePage() {
   const requests = await listOpenAgentUserRequests(80);
+  const nextRequest = prioritizeRequest(requests);
 
   return (
     <AppShell>
@@ -25,6 +28,32 @@ export default async function NeedsMePage() {
           title="Needs Me"
           description="Questions and blockers agents cannot resolve safely on their own. Answer or dismiss these to keep workflows moving."
         />
+
+        <Card sx={{ borderColor: nextRequest ? "warning.main" : "success.main", bgcolor: nextRequest ? "rgba(245, 158, 11, 0.08)" : "rgba(16, 185, 129, 0.08)" }}>
+          <CardContent>
+            <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
+              <Box>
+                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 1 }}>
+                  <Chip size="small" color={nextRequest ? "warning" : "success"} icon={nextRequest ? <PriorityHighOutlinedIcon /> : undefined} label="Next action" />
+                  {requests.length ? <Chip size="small" variant="outlined" label={requests.length} /> : null}
+                </Stack>
+                <Typography variant="h3">{nextRequest ? "Resolve the top blocker" : "No blockers waiting"}</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                  {nextRequest ? nextRequest.question : "Agents can keep working without a human answer right now."}
+                </Typography>
+              </Box>
+              {nextRequest ? (
+                <ActionButton href={agentUserRequestHref(nextRequest)} variant="contained" color="warning" endIcon={<OpenInNewIcon />}>
+                  Open context
+                </ActionButton>
+              ) : (
+                <ActionButton href="/dashboard" variant="contained" color="success">
+                  Open dashboard
+                </ActionButton>
+              )}
+            </Stack>
+          </CardContent>
+        </Card>
 
         {requests.length === 0 ? (
           <Card>
@@ -52,6 +81,14 @@ export default async function NeedsMePage() {
                       ) : null}
 
                       <Typography variant="h3">{request.question}</Typography>
+
+                      {request.type === "UNKNOWN_ANSWER" || request.type === "EMAIL_REVIEW" || request.type === "INTERVIEW_PREP" || request.type === "FOLLOW_UP_DUE" ? (
+                        <RequestAnswerForm
+                          requestId={request.id}
+                          question={request.question}
+                          canSaveMemory={request.type === "UNKNOWN_ANSWER"}
+                        />
+                      ) : null}
 
                       <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ justifyContent: "space-between" }}>
                         <ActionButton href={agentUserRequestHref(request)} size="small" variant="outlined" endIcon={<OpenInNewIcon />}>
@@ -87,4 +124,20 @@ export default async function NeedsMePage() {
       </Stack>
     </AppShell>
   );
+}
+
+function prioritizeRequest<T extends { type: string; createdAt: Date }>(requests: T[]) {
+  return [...requests].sort((left, right) => {
+    const leftPriority = requestPriority(left.type);
+    const rightPriority = requestPriority(right.type);
+    if (leftPriority !== rightPriority) return leftPriority - rightPriority;
+    return left.createdAt.getTime() - right.createdAt.getTime();
+  })[0] ?? null;
+}
+
+function requestPriority(type: string) {
+  if (type === "APPLICATION_BLOCKED") return 1;
+  if (type === "UNKNOWN_ANSWER") return 2;
+  if (type === "INTERVIEW_PREP") return 3;
+  return 4;
 }

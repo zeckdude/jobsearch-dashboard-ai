@@ -108,15 +108,54 @@ export async function resolveAgentUserRequest(input: ResolveAgentUserRequestInpu
 
   const status = input.status ?? (input.answer?.trim() ? "ANSWERED" : "RESOLVED");
   const answer = input.answer?.trim() || null;
+  const resolvedAt = new Date();
 
-  return prisma.agentUserRequest.update({
+  const resolved = await prisma.agentUserRequest.update({
     where: { id: input.id },
     data: {
       status,
       answer,
-      resolvedAt: new Date(),
+      resolvedAt,
     },
   });
+
+  if (request.applicationId) {
+    await prisma.applicationEvent.create({
+      data: {
+        applicationId: request.applicationId,
+        type: "note_added",
+        payload: buildAgentUserRequestResolutionEventPayload({
+          requestId: request.id,
+          requestType: request.type,
+          question: request.question,
+          status,
+          answerSaved: Boolean(answer),
+          resolvedAt,
+        }),
+      },
+    });
+  }
+
+  return resolved;
+}
+
+export function buildAgentUserRequestResolutionEventPayload(input: {
+  requestId: string;
+  requestType: AgentUserRequestType;
+  question: string;
+  status: Extract<AgentUserRequestStatus, "ANSWERED" | "DISMISSED" | "RESOLVED">;
+  answerSaved: boolean;
+  resolvedAt: Date;
+}): Prisma.InputJsonValue {
+  return {
+    source: "agent_user_request",
+    requestId: input.requestId,
+    requestType: input.requestType,
+    question: input.question,
+    status: input.status,
+    answerSaved: input.answerSaved,
+    resolvedAt: input.resolvedAt.toISOString(),
+  };
 }
 
 export function agentUserRequestHref(request: Pick<AgentUserRequest, "applicationId" | "jobPostingId">) {

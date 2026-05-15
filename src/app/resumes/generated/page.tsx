@@ -1,7 +1,9 @@
 import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
+import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import Box from "@mui/material/Box";
 import Card from "@mui/material/Card";
+import CardContent from "@mui/material/CardContent";
 import Chip from "@mui/material/Chip";
 import Stack from "@mui/material/Stack";
 import Table from "@mui/material/Table";
@@ -16,7 +18,6 @@ import { ActionButton } from "@/components/action-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { ScoreChip } from "@/components/ui/score-chip";
-import { WorkflowGuide } from "@/components/ui/workflow-guide";
 import { prisma } from "@/lib/prisma";
 import { RegenerateResumeButton } from "./regenerate-resume-button";
 
@@ -69,28 +70,38 @@ export default async function GeneratedResumesPage() {
     const current = latestResumeCreatedAtByJobId.get(resume.jobPosting.id) ?? 0;
     latestResumeCreatedAtByJobId.set(resume.jobPosting.id, Math.max(current, resume.createdAt.getTime()));
   }
+  const qaReviewCount = [
+    ...resumes.map((resume) => materialNotes(resume.generationNotes)),
+    ...coverLetters.map((letter) => materialNotes(letter.generationNotes)),
+  ].filter((notes) => notes.applicationQa?.status === "NEEDS_REVIEW").length;
+  const resumesMissingLetters = resumes.filter((resume) => resume.jobPosting.coverLetters.length === 0).length;
+  const nextAction = generatedMaterialsNextAction({ qaReviewCount, resumesMissingLetters, materialCount: resumes.length + coverLetters.length });
 
   return (
     <AppShell>
       <Stack spacing={3}>
         <PageHeader
-          eyebrow="Resume atelier"
+          eyebrow="Generated packets"
           title="Generated Materials"
-          description="Step 3 output: review generated resumes and cover letters before complete packages move into the ready queue."
+          description="Review tailored resumes, cover letters, QA warnings, and exports created from approved evidence before packets move through Applications."
         />
-        <WorkflowGuide
-          active="materials"
-          title="Step 3 of 5: review generated materials"
-          stepOverrides={{
-            materials: {
-              body: "Review tailored resume exports and generated cover letters here before working complete packages in Applications.",
-              action: "View materials",
-            },
-            applications: {
-              body: "Complete packages with resume and cover letter are tracked in Applications.",
-            },
-          }}
-        />
+        <Card sx={{ borderColor: qaReviewCount ? "warning.main" : "primary.main", bgcolor: qaReviewCount ? "rgba(245, 158, 11, 0.08)" : "rgba(37, 99, 235, 0.08)" }}>
+          <CardContent>
+            <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
+              <Box>
+                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 1 }}>
+                  <Chip size="small" color={nextAction.color} label="Next action" />
+                  {typeof nextAction.count === "number" ? <Chip size="small" variant="outlined" label={nextAction.count} /> : null}
+                </Stack>
+                <Typography variant="h3">{nextAction.title}</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{nextAction.detail}</Typography>
+              </Box>
+              <ActionButton href={nextAction.href} variant="contained" color={nextAction.color} startIcon={nextAction.icon}>
+                {nextAction.label}
+              </ActionButton>
+            </Stack>
+          </CardContent>
+        </Card>
         <TableContainer
           component={Card}
           sx={{
@@ -317,6 +328,40 @@ export default async function GeneratedResumesPage() {
       </Stack>
     </AppShell>
   );
+}
+
+function generatedMaterialsNextAction({ qaReviewCount, resumesMissingLetters, materialCount }: { qaReviewCount: number; resumesMissingLetters: number; materialCount: number }) {
+  if (qaReviewCount > 0) {
+    return {
+      title: "Review material QA",
+      detail: "Some generated materials have warnings, unsupported-claim flags, or style issues. Review their application packets before using them.",
+      label: "Open applications",
+      href: "/applications",
+      color: "warning" as const,
+      icon: <FactCheckOutlinedIcon />,
+      count: qaReviewCount,
+    };
+  }
+  if (resumesMissingLetters > 0) {
+    return {
+      title: "Complete material pairs",
+      detail: "Some resumes do not yet have matching cover letters. Open the related jobs to complete the package.",
+      label: "Open jobs",
+      href: "/jobs",
+      color: "primary" as const,
+      icon: <FactCheckOutlinedIcon />,
+      count: resumesMissingLetters,
+    };
+  }
+  return {
+    title: materialCount > 0 ? "Move clean materials forward" : "Generate materials",
+    detail: materialCount > 0 ? "Materials are clean enough to review in application packets and move into Apply Sprint." : "Approve jobs and generate tailored materials before reviewing this page.",
+    label: materialCount > 0 ? "Open applications" : "Open jobs",
+    href: materialCount > 0 ? "/applications" : "/jobs",
+    color: "primary" as const,
+    icon: <VisibilityOutlinedIcon />,
+    count: materialCount,
+  };
 }
 
 function MaterialQaSummary({ notes }: { notes: MaterialNotes }) {

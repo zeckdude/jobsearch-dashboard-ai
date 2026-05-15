@@ -149,6 +149,12 @@ enum ApplicationOutcomeType {
   CLOSED
 }
 
+enum InterviewPrepTaskStatus {
+  OPEN
+  DONE
+  DISMISSED
+}
+
 enum NotificationType {
   email
   push
@@ -253,6 +259,7 @@ enum AgentUserRequestType {
   APPLICATION_BLOCKED
   EMAIL_REVIEW
   INTERVIEW_PREP
+  FOLLOW_UP_DUE
   APPROVAL_NEEDED
   GENERAL
 }
@@ -285,11 +292,23 @@ enum ApplicationAutomationRunStatus {
   FAILED
 }
 
+enum CompanyAutoSubmitPolicyMode {
+  INHERIT
+  ALLOW
+  BLOCK
+}
+
 enum EmailProvider {
   gmail
   outlook
   imap
   manual
+}
+
+enum EmailOAuthConnectionStatus {
+  CONNECTED
+  NEEDS_REAUTH
+  DISABLED
 }
 
 enum EmailMessageClassification {
@@ -306,6 +325,12 @@ enum EmailMessageClassification {
   NEEDS_REVIEW
 }
 
+enum JoleneMessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
 model User {
   id                   String                 @id @default(cuid())
   email                String                 @unique
@@ -316,12 +341,17 @@ model User {
   agentUserRequests    AgentUserRequest[]
   answerMemories       ApplicationAnswerMemory[]
   automationSettings   ApplicationAutomationSettings?
+  companyAutomationPolicies CompanyAutomationPolicy[]
   automationRuns       ApplicationAutomationRun[]
   applicationPackets   ApplicationPacket[]
   applications         Application[]
   contacts             Contact[]
   coverLetters         GeneratedCoverLetter[]
   emailMessages        EmailMessageRecord[]
+  emailOAuthConnections EmailOAuthConnection[]
+  formPatterns         ApplicationFormPattern[]
+  interviewPrepTasks   InterviewPrepTask[]
+  joleneConversations  JoleneConversation[]
   notificationLogs     NotificationLog[]
   notificationSettings NotificationSettings?
   outcomes             ApplicationOutcome[]
@@ -331,6 +361,32 @@ model User {
   resumeUploads        ResumeUpload[]
   resumes              GeneratedResume[]
   searchProfiles       JobSearchProfile[]
+}
+
+model JoleneConversation {
+  id          String          @id @default(cuid())
+  userId      String
+  contextPath String
+  title       String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  messages    JoleneMessage[]
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, contextPath, updatedAt])
+}
+
+model JoleneMessage {
+  id             String             @id @default(cuid())
+  conversationId String
+  role           JoleneMessageRole
+  content        String
+  contextJson    Json               @default("{}")
+  actionJson     Json               @default("{}")
+  createdAt      DateTime           @default(now())
+  conversation   JoleneConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
 }
 
 model UserProfile {
@@ -673,6 +729,7 @@ model Application {
   agentUserRequests  AgentUserRequest[]
   events             ApplicationEvent[]
   emailMessages      EmailMessageRecord[]
+  interviewPrepTasks InterviewPrepTask[]
   outcomes           ApplicationOutcome[]
   coverLetter        GeneratedCoverLetter? @relation(fields: [coverLetterId], references: [id])
   jobPosting         JobPosting            @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
@@ -942,6 +999,29 @@ model ApplicationAutomationRun {
   @@index([jobPostingId, startedAt])
 }
 
+model ApplicationFormPattern {
+  id           String      @id @default(cuid())
+  userId       String
+  atsProvider  AtsProvider @default(unknown)
+  host         String
+  fieldKey     String
+  category     String
+  label        String
+  inputType    String?
+  selector     String?
+  successCount Int         @default(0)
+  failureCount Int         @default(0)
+  lastSeenAt   DateTime    @default(now())
+  metadataJson Json        @default("{}")
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, host, fieldKey, category])
+  @@index([userId, atsProvider, lastSeenAt])
+  @@index([userId, category])
+}
+
 model ApplicationAutomationSettings {
   id                         String   @id @default(cuid())
   userId                     String   @unique
@@ -954,6 +1034,21 @@ model ApplicationAutomationSettings {
   createdAt                  DateTime @default(now())
   updatedAt                  DateTime @updatedAt
   user                       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model CompanyAutomationPolicy {
+  id              String                      @id @default(cuid())
+  userId          String
+  company         String
+  companyKey      String
+  autoSubmitMode  CompanyAutoSubmitPolicyMode @default(INHERIT)
+  notes           String?
+  createdAt       DateTime                    @default(now())
+  updatedAt       DateTime                    @updatedAt
+  user            User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, companyKey])
+  @@index([userId, autoSubmitMode])
 }
 
 model EmailMessageRecord {
@@ -986,6 +1081,25 @@ model EmailMessageRecord {
   @@index([matchedJobPostingId, receivedAt])
 }
 
+model EmailOAuthConnection {
+  id             String                     @id @default(cuid())
+  userId         String
+  provider       EmailProvider
+  emailAddress   String?
+  accessToken    String
+  refreshToken   String?
+  expiresAt      DateTime?
+  scopes         Json                       @default("[]")
+  status         EmailOAuthConnectionStatus @default(CONNECTED)
+  lastSyncAt     DateTime?
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+  user           User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+  @@index([userId, status])
+}
+
 model ApplicationEvent {
   id            String               @id @default(cuid())
   applicationId String
@@ -993,6 +1107,27 @@ model ApplicationEvent {
   payload       Json                 @default("{}")
   createdAt     DateTime             @default(now())
   application   Application          @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+}
+
+model InterviewPrepTask {
+  id            String                  @id @default(cuid())
+  userId        String
+  applicationId String
+  category      String
+  title         String
+  detail        String
+  evidenceRef   String?
+  priority      Int                     @default(3)
+  status        InterviewPrepTaskStatus @default(OPEN)
+  completedAt   DateTime?
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+  application   Application             @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  user          User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([applicationId, title])
+  @@index([userId, status, priority])
+  @@index([applicationId, status])
 }
 
 model ApplicationOutcome {

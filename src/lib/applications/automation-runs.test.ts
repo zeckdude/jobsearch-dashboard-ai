@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assistantLogActions, assistantLogScreenshots, classifyAssistantLog } from "@/lib/applications/automation-runs";
+import { assistantLogActions, assistantLogFieldPatterns, assistantLogScreenshots, buildAutomationRunEventPayload, classifyAssistantLog } from "@/lib/applications/automation-runs";
 
 describe("application automation runs", () => {
   it("classifies a successful fill run as ready to submit", () => {
@@ -11,7 +11,7 @@ Review every field in the browser. Submit manually only if everything is correct
   });
 
   it("classifies gated auto-submit completion", () => {
-    expect(classifyAssistantLog("Auto-submit clicked after safety checks passed.")).toMatchObject({ status: "SUBMITTED" });
+    expect(classifyAssistantLog("Auto-submit confirmed after safety checks passed.")).toMatchObject({ status: "SUBMITTED" });
   });
 
   it("classifies skipped auto-submit as ready for manual review", () => {
@@ -48,7 +48,7 @@ Selected application answers: /tmp/answers.txt
 
   it("extracts submit confirmation artifacts from logs", () => {
     expect(assistantLogScreenshots(`
-Auto-submit clicked after safety checks passed.
+Auto-submit confirmed after safety checks passed.
 Submit confirmation screenshot: /tmp/submit-confirmation.png
 Submit confirmation text: /tmp/submit-confirmation.txt
 Submit confirmation summary: Thank you for applying. We received your application.
@@ -60,5 +60,51 @@ Submit confirmation summary: Thank you for applying. We received your applicatio
         summary: "Thank you for applying. We received your application.",
       },
     ]);
+  });
+
+  it("extracts safe reusable form patterns from assistant logs", () => {
+    expect(assistantLogFieldPatterns(`
+Detected fields after filling:
+- first_name: filled | text | selector: input#firstName | first name
+- email: filled | email | selector: input[name="email"] | email
+- sensitive_unfilled: empty | select | selector: select#gender | gender
+- unknown: empty | text | selector: textarea#custom | explain why you are interested
+`)).toEqual([
+      {
+        category: "first_name",
+        fieldKey: "input_firstname",
+        inputType: "text",
+        label: "first name",
+        selector: "input#firstName",
+      },
+      {
+        category: "email",
+        fieldKey: "input_name_email",
+        inputType: "email",
+        label: "email",
+        selector: 'input[name="email"]',
+      },
+    ]);
+  });
+
+  it("builds a compact application event for automation run state changes", () => {
+    expect(buildAutomationRunEventPayload({
+      automationRunId: "run_1",
+      status: "READY_TO_SUBMIT",
+      blockerType: "auto_submit_skipped",
+      blockerMessage: "Auto-submit was skipped by a page-level safety check.",
+      actionCount: 3,
+      screenshotCount: 1,
+      logPath: "/tmp/assistant.log",
+    })).toEqual({
+      source: "application_automation_run",
+      automationRunId: "run_1",
+      status: "READY_TO_SUBMIT",
+      blockerType: "auto_submit_skipped",
+      blockerMessage: "Auto-submit was skipped by a page-level safety check.",
+      actionCount: 3,
+      screenshotCount: 1,
+      logPath: "/tmp/assistant.log",
+    });
   });
 });

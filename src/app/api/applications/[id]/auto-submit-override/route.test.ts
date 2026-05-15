@@ -31,6 +31,7 @@ describe("/api/applications/[id]/auto-submit-override", () => {
       reasons: ["Application packet must be approved."],
       effectiveAutoSubmitEnabled: true,
       override: true,
+      companyPolicy: null,
       settings: {
         autoSubmitEnabled: false,
         requireApprovedPacket: true,
@@ -68,6 +69,7 @@ describe("/api/applications/[id]/auto-submit-override", () => {
       reasons: ["Auto-submit is disabled in settings."],
       effectiveAutoSubmitEnabled: false,
       override: null,
+      companyPolicy: null,
       settings: {
         autoSubmitEnabled: false,
         requireApprovedPacket: true,

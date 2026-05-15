@@ -178,11 +178,14 @@ React TypeScript Next.js Storybook Playwright
     expect(draft.usableInCoverLetter).toBe(true);
     expect(draft.usableInRecruiterMessage).toBe(true);
     expect(draft.content).toContain("Local-first AI-powered job search operating system");
+    expect(draft.content).toContain("Model Context Protocol server");
     expect(draft.tags).toEqual(expect.arrayContaining([
       "ai-agents",
       "workflow-automation",
       "rag",
       "pgvector",
+      "mcp",
+      "model-context-protocol",
       "internal-tools",
       "developer-tools",
     ]));

@@ -41,6 +41,8 @@ describe("/api/jobs/capture", () => {
     expect(response.status).toBe(201);
     await expect(response.json()).resolves.toMatchObject({
       job: { id: "job_1" },
+      jobUrl: "/jobs/job_1",
+      matchCount: 0,
       message: "Captured job from browser.",
     });
   });

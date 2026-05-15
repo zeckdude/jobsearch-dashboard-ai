@@ -5,21 +5,12 @@ import { usePathname } from "next/navigation";
 import AssignmentTurnedInOutlinedIcon from "@mui/icons-material/AssignmentTurnedInOutlined";
 import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import BoltOutlinedIcon from "@mui/icons-material/BoltOutlined";
-import ConnectWithoutContactOutlinedIcon from "@mui/icons-material/ConnectWithoutContactOutlined";
 import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
-import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
-import HubOutlinedIcon from "@mui/icons-material/HubOutlined";
-import HistoryOutlinedIcon from "@mui/icons-material/HistoryOutlined";
-import InsightsOutlinedIcon from "@mui/icons-material/InsightsOutlined";
-import ManageSearchOutlinedIcon from "@mui/icons-material/ManageSearchOutlined";
 import MarkChatUnreadOutlinedIcon from "@mui/icons-material/MarkChatUnreadOutlined";
-import PolicyOutlinedIcon from "@mui/icons-material/PolicyOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
-import SourceOutlinedIcon from "@mui/icons-material/SourceOutlined";
 import WorkOutlineOutlinedIcon from "@mui/icons-material/WorkOutlineOutlined";
 import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
-import Chip from "@mui/material/Chip";
 import Container from "@mui/material/Container";
 import Divider from "@mui/material/Divider";
 import Drawer from "@mui/material/Drawer";
@@ -32,24 +23,17 @@ import Stack from "@mui/material/Stack";
 import Toolbar from "@mui/material/Toolbar";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
+import { JoleneAgentButton } from "@/components/jolene-agent-button";
 
 const drawerWidth = 264;
 
 const navItems = [
   { href: "/dashboard", label: "Command Center", eyebrow: "Home", icon: DashboardOutlinedIcon },
   { href: "/needs-me", label: "Needs Me", eyebrow: "Agent blockers", icon: MarkChatUnreadOutlinedIcon },
-  { href: "/profiles", label: "1. Profiles", eyebrow: "Set intent", icon: ManageSearchOutlinedIcon },
-  { href: "/evidence", label: "Evidence", eyebrow: "Truth layer", icon: PolicyOutlinedIcon },
-  { href: "/sources", label: "Sources", eyebrow: "Company list", icon: SourceOutlinedIcon },
-  { href: "/agents", label: "Agent Board", eyebrow: "Review advice", icon: HubOutlinedIcon },
-  { href: "/jobs", label: "2. Review Jobs", eyebrow: "Approve matches", icon: WorkOutlineOutlinedIcon },
-  { href: "/resumes", label: "3. Materials", eyebrow: "Resume source", icon: FactCheckOutlinedIcon },
-  { href: "/applications", label: "4. Ready Queue", eyebrow: "Track packages", icon: AssignmentTurnedInOutlinedIcon },
-  { href: "/applications/assistant", label: "5. Apply Sprint", eyebrow: "Submit manually", icon: BoltOutlinedIcon },
-  { href: "/networking", label: "Networking", eyebrow: "Recruiter drafts", icon: ConnectWithoutContactOutlinedIcon },
-  { href: "/outcomes", label: "Outcomes", eyebrow: "Learn patterns", icon: InsightsOutlinedIcon },
-  { href: "/runs", label: "Search Runs", eyebrow: "Worker logs", icon: HistoryOutlinedIcon },
-  { href: "/settings", label: "Settings", eyebrow: "Sources", icon: SettingsOutlinedIcon },
+  { href: "/jobs", label: "Jobs", eyebrow: "Review matches", icon: WorkOutlineOutlinedIcon },
+  { href: "/applications/assistant", label: "Apply Sprint", eyebrow: "Run agent", icon: BoltOutlinedIcon },
+  { href: "/applications", label: "Applications", eyebrow: "Track outcomes", icon: AssignmentTurnedInOutlinedIcon },
+  { href: "/settings", label: "Settings", eyebrow: "Configure", icon: SettingsOutlinedIcon },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -150,16 +134,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             );
           })}
         </List>
-        <Box sx={{ mt: "auto", p: 2 }}>
-          <Box sx={{ border: 1, borderColor: "divider", borderRadius: 2, bgcolor: "#ffffff", p: 1.5 }}>
-            <Stack spacing={1}>
-              <Chip size="small" color="success" variant="outlined" label="Human approval required" sx={{ alignSelf: "flex-start" }} />
-              <Typography variant="caption" color="text.secondary">
-                Discovery and tailoring are automated. Submissions stay manual.
-              </Typography>
-            </Stack>
-          </Box>
-        </Box>
       </Drawer>
 
       <Box component="main" sx={{ pl: { lg: `${drawerWidth}px` } }}>
@@ -186,7 +160,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <Typography variant="caption" color="text.secondary">Apply System</Typography>
                 </Box>
               </Stack>
-              <Chip size="small" color="success" variant="outlined" label="Manual submit" />
             </Stack>
           </Box>
           <Box
@@ -234,6 +207,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {children}
         </Container>
       </Box>
+      <JoleneAgentButton />
     </Box>
   );
 }

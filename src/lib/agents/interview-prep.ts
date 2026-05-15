@@ -1,4 +1,5 @@
 import type { Application, CandidateEvidence, GeneratedCoverLetter, GeneratedResume, JobPosting, JobProfileMatch } from "@prisma/client";
+import type { CompanyResearchOutput } from "@/lib/agents/company-research";
 import { runAgent } from "@/lib/agents/run-agent";
 import { isBroadResumeEvidence, retrieveCandidateEvidence } from "@/lib/evidence/retrieval";
 import { jsonArray } from "@/lib/json";
@@ -20,9 +21,12 @@ export type InterviewPrepOutput = {
     evidenceRef: string;
     talkingPoint: string;
   }>;
+  likelyStages: string[];
+  likelyAssessments: string[];
   risksToPrepare: string[];
   questionsToAsk: string[];
   followUpFocus: string[];
+  sourceNotes: string[];
   confidence: number;
   reasoningSummary: string;
 };
@@ -59,28 +63,42 @@ export async function runInterviewPrepAgent(input: InterviewPrepInput) {
             confidenceMinimum: "INFERRED",
             usableFor: "resume",
             limit: 8,
-          })
+        })
         : [];
+      const companyResearchRun = await prisma.agentRun.findFirst({
+        where: {
+          agentType: "COMPANY_RESEARCH",
+          status: "COMPLETED",
+          inputJson: {
+            path: ["applicationId"],
+            equals: input.applicationId,
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      });
 
-      return buildInterviewPrep(application, evidence);
+      return buildInterviewPrep(application, evidence, companyResearchOutput(companyResearchRun?.outputJson));
     },
   });
 }
 
-export function buildInterviewPrep(application: ApplicationWithPacket, evidence: CandidateEvidence[]): InterviewPrepOutput {
+export function buildInterviewPrep(application: ApplicationWithPacket, evidence: CandidateEvidence[], companyResearch: CompanyResearchOutput | null = null): InterviewPrepOutput {
   const jobText = `${application.jobPosting.title} ${application.jobPosting.description}`.toLowerCase();
   const resumeNotes = objectValue(application.resume?.generationNotes);
   const strategy = objectValue(resumeNotes.resumeStrategy);
   const emphasisTags = jsonArray(strategy.emphasisTags);
-  const likelyThemes = inferThemes(jobText, emphasisTags);
+  const likelyThemes = mergeUnique(inferThemes(jobText, emphasisTags), companyResearch?.roleThemes ?? []).slice(0, 6);
   const focusedEvidence = preferFocusedInterviewEvidence(evidence);
   const evidenceStories = focusedEvidence.slice(0, 5).map((item) => ({
     title: item.title,
     evidenceRef: item.id,
     talkingPoint: talkingPointForEvidence(item, application.jobPosting),
   }));
-  const risksToPrepare = inferRisks(jobText, application.jobProfileMatch, focusedEvidence.length);
-  const questionsToAsk = buildQuestions(application.jobPosting, likelyThemes);
+  const likelyStages = inferLikelyStages(jobText, companyResearch);
+  const likelyAssessments = inferLikelyAssessments(jobText, likelyThemes, companyResearch);
+  const risksToPrepare = mergeUnique(inferRisks(jobText, application.jobProfileMatch, focusedEvidence.length), companyResearch?.risks ?? []).slice(0, 6);
+  const questionsToAsk = mergeUnique(buildQuestions(application.jobPosting, likelyThemes), companyResearch?.questionsToAnswer ?? []).slice(0, 8);
+  const sourceNotes = buildPrepSourceNotes(companyResearch);
 
   return {
     applicationId: application.id,
@@ -91,6 +109,8 @@ export function buildInterviewPrep(application: ApplicationWithPacket, evidence:
       : `Position as a credible match for ${application.jobPosting.company}'s ${application.jobPosting.title} role using approved evidence only.`,
     likelyThemes,
     evidenceStories,
+    likelyStages,
+    likelyAssessments,
     risksToPrepare,
     questionsToAsk,
     followUpFocus: [
@@ -98,8 +118,11 @@ export function buildInterviewPrep(application: ApplicationWithPacket, evidence:
       "Map answers back to approved projects and experience, not unsupported claims.",
       "After the conversation, update application status and add any useful interview notes as evidence.",
     ],
-    confidence: focusedEvidence.length >= 5 ? 0.82 : focusedEvidence.length >= 2 ? 0.68 : 0.52,
-    reasoningSummary: "Built interview prep from the job description, saved application packet strategy, match concerns, and approved candidate evidence.",
+    sourceNotes,
+    confidence: prepConfidence(focusedEvidence.length, companyResearch?.confidence),
+    reasoningSummary: companyResearch
+      ? "Built interview prep from the job description, saved company research, packet strategy, match concerns, and approved candidate evidence. No unsupported external claims were introduced."
+      : "Built interview prep from the job description, saved application packet strategy, match concerns, and approved candidate evidence.",
   };
 }
 
@@ -165,6 +188,54 @@ function buildQuestions(job: Pick<JobPosting, "company" | "title" | "description
   return questions.slice(0, 6);
 }
 
+function inferLikelyStages(jobText: string, companyResearch: CompanyResearchOutput | null) {
+  const stages = new Set<string>();
+  stages.add("Recruiter screen focused on role fit, logistics, compensation, and timing.");
+  stages.add("Hiring-manager or team screen focused on product judgment, technical depth, and collaboration.");
+  if (/\btechnical interview|coding|pair programming|take.?home|assessment\b/i.test(jobText)) {
+    stages.add("Technical assessment or coding conversation based on the job description.");
+  }
+  if (/\bsystem design|architecture|platform|staff|principal\b/i.test(jobText)) {
+    stages.add("Architecture or frontend-system design discussion.");
+  }
+  if (/\bdesign system|designer|product manager|cross-functional\b/i.test(jobText)) {
+    stages.add("Cross-functional product/design discussion.");
+  }
+  for (const note of companyResearch?.sourceNotes ?? []) {
+    if (/company source|ats provider|application url/i.test(note)) continue;
+    stages.add(note);
+  }
+  return Array.from(stages).slice(0, 6);
+}
+
+function inferLikelyAssessments(jobText: string, themes: string[], companyResearch: CompanyResearchOutput | null) {
+  const assessments = new Set<string>();
+  if (/\breact|frontend|ui|web\b/i.test(jobText)) assessments.add("React/TypeScript UI implementation or debugging exercise.");
+  if (/\bdesign system|storybook|component\b/i.test(jobText)) assessments.add("Component architecture, accessibility, and design-system tradeoffs.");
+  if (/\bfull.?stack|api|node|postgres\b/i.test(jobText)) assessments.add("Full-stack product flow discussion covering API and data modeling choices.");
+  if (/\bsecurity|identity|auth|webauthn|passkey\b/i.test(jobText)) assessments.add("Authentication/security UX scenario and truthful depth boundaries.");
+  if (/\bai|llm|agent|automation\b/i.test(jobText)) assessments.add("AI workflow quality, evaluation, and human-review discussion.");
+  for (const theme of themes) assessments.add(`Prepare examples for ${theme}.`);
+  for (const need of companyResearch?.likelyTeamNeeds ?? []) assessments.add(`Discuss how you would help the team ${need}.`);
+  if (assessments.size === 0) assessments.add("Senior product-engineering conversation focused on tradeoffs, ownership, and execution.");
+  return Array.from(assessments).slice(0, 7);
+}
+
+function buildPrepSourceNotes(companyResearch: CompanyResearchOutput | null) {
+  const notes = companyResearch?.sourceNotes?.length ? [...companyResearch.sourceNotes] : ["No public company-process source has been saved yet; prep is based on the job description and approved evidence."];
+  if (companyResearch?.brief) notes.unshift(companyResearch.brief);
+  return notes.slice(0, 6);
+}
+
+function prepConfidence(evidenceCount: number, companyConfidence?: number) {
+  const evidenceConfidence = evidenceCount >= 5 ? 0.82 : evidenceCount >= 2 ? 0.68 : 0.52;
+  return companyConfidence ? Math.min(0.9, (evidenceConfidence + companyConfidence) / 2) : evidenceConfidence;
+}
+
+function mergeUnique(first: string[], second: string[]) {
+  return Array.from(new Set([...first, ...second].filter(Boolean)));
+}
+
 function talkingPointForEvidence(evidence: Pick<CandidateEvidence, "title" | "content" | "tags">, job: Pick<JobPosting, "title" | "company">) {
   const shortContent = evidence.content.length > 180 ? `${evidence.content.slice(0, 177)}...` : evidence.content;
   const tags = jsonArray(evidence.tags).slice(0, 4);
@@ -173,4 +244,8 @@ function talkingPointForEvidence(evidence: Pick<CandidateEvidence, "title" | "co
 
 function objectValue(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function companyResearchOutput(value: unknown): CompanyResearchOutput | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as CompanyResearchOutput : null;
 }
