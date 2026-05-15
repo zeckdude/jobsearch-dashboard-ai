@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { backfillApplicationPackets, buildApplicationPacketData, packetApprovalChecklist, packetApprovalState } from "@/lib/applications/application-packets";
+import { applicationAnswerEntries, backfillApplicationPackets, buildApplicationPacketData, packetApprovalChecklist, packetApprovalState } from "@/lib/applications/application-packets";
 
 describe("application packet aggregate", () => {
   it("stores generated resume, cover letter, QA, and evidence refs as a draft packet", () => {
@@ -119,6 +119,17 @@ describe("application packet aggregate", () => {
       expect.objectContaining({ label: "Cover letter", complete: false }),
       expect.objectContaining({ label: "QA review", complete: false }),
     ]));
+  });
+
+  it("reads saved application answer entries defensively", () => {
+    const entries = applicationAnswerEntries([
+      { question: "Why this role?", options: [{ title: "Direct", answer: "Because it fits.", evidence: [], tone: "brief", cautions: [] }] },
+      { question: 42, options: [] },
+      null,
+    ]);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.question).toBe("Why this role?");
   });
 
   it("exports a backfill function for existing applications", () => {

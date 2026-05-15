@@ -47,6 +47,8 @@ type LaunchResponse = {
 type QuestionHelperResponse = {
   error?: string;
   generatedBy?: string;
+  savedToPacket?: boolean;
+  packetAnswerCount?: number | null;
   context?: {
     bulletsConsidered: number;
     projectsConsidered: number;
@@ -153,11 +155,13 @@ export function AssistantWorkbench({ applications }: { applications: ReadyApplic
       const response = await fetch("/api/applications/question-helper", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ question }),
+        body: JSON.stringify({ question, applicationId: selectedId || undefined }),
       });
       const payload = (await response.json().catch(() => ({}))) as QuestionHelperResponse;
       if (!response.ok) throw new Error(payload.error ?? "Unable to generate answer options.");
       setQuestionHelper(payload);
+      setNotice(payload.savedToPacket ? "Answer options saved to the application packet." : "Answer options generated.");
+      router.refresh();
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Unable to generate answer options.");
     } finally {
@@ -325,7 +329,8 @@ export function AssistantWorkbench({ applications }: { applications: ReadyApplic
               </Button>
               {questionHelper?.context ? (
                 <Typography variant="caption" color="text.secondary">
-                  Used {questionHelper.context.bulletsConsidered} bullets, {questionHelper.context.projectsConsidered} projects, {questionHelper.context.githubRepositoriesConsidered} repos.
+                  Used {questionHelper.context.bulletsConsidered} bullets, {questionHelper.context.projectsConsidered} projects, {questionHelper.context.githubRepositoriesConsidered} repos
+                  {questionHelper.savedToPacket ? ` · saved to packet (${questionHelper.packetAnswerCount ?? 1})` : ""}.
                 </Typography>
               ) : null}
             </Stack>

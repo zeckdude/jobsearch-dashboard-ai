@@ -26,7 +26,7 @@ import { StatusChip } from "@/components/ui/status-chip";
 import { WorkflowGuide } from "@/components/ui/workflow-guide";
 import { jsonArray } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
-import { packetApprovalChecklist, packetApprovalState } from "@/lib/applications/application-packets";
+import { applicationAnswerEntries, packetApprovalChecklist, packetApprovalState } from "@/lib/applications/application-packets";
 import { ApprovePacketButton } from "./approve-packet-button";
 import { InterviewPrepButton } from "./interview-prep-button";
 import { CompanyResearchButton } from "./company-research-button";
@@ -202,6 +202,7 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
   const compensationOpportunity = compensationOpportunityOutput(latestCompensationRun?.outputJson);
   const approvalState = packet ? packetApprovalState(packet) : null;
   const approvalChecklist = packetApprovalChecklist(packet);
+  const savedAnswers = applicationAnswerEntries(packet?.applicationAnswersJson);
   const latestOutreach = await prisma.recruiterOutreach.findFirst({
     where: {
       userId: application.userId,
@@ -330,6 +331,47 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
             ) : null}
           />
         </Box>
+
+        <Card>
+          <CardContent>
+            <Stack spacing={2}>
+              <Typography variant="h3">Application answers</Typography>
+              {savedAnswers.length ? (
+                <Stack spacing={2}>
+                  {savedAnswers.map((entry, entryIndex) => (
+                    <Box key={entry.id ?? `${entry.question}-${entryIndex}`} sx={{ borderTop: entryIndex ? 1 : 0, borderColor: "divider", pt: entryIndex ? 2 : 0 }}>
+                      <Stack spacing={1.5}>
+                        <Box>
+                          <Typography sx={{ fontWeight: 850 }}>{entry.question}</Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {entry.generatedBy ?? "generated"}{entry.createdAt ? ` · ${new Date(entry.createdAt).toLocaleString()}` : ""}
+                          </Typography>
+                        </Box>
+                        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", xl: "repeat(3, 1fr)" }, gap: 1.5 }}>
+                          {entry.options.map((option, optionIndex) => (
+                            <Box key={`${entry.question}-${option.title}-${optionIndex}`} sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.5 }}>
+                              <Stack spacing={1}>
+                                <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", alignItems: "center" }}>
+                                  <Typography sx={{ fontWeight: 850 }}>{option.title}</Typography>
+                                  <Chip size="small" variant="outlined" label={`Option ${optionIndex + 1}`} />
+                                </Stack>
+                                <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", lineHeight: 1.65 }}>{option.answer}</Typography>
+                                <SignalSection title="Evidence" items={option.evidence ?? []} color="primary" />
+                                <SignalSection title="Cautions" items={option.cautions ?? []} color="warning" />
+                              </Stack>
+                            </Box>
+                          ))}
+                        </Box>
+                      </Stack>
+                    </Box>
+                  ))}
+                </Stack>
+              ) : (
+                <EmptyState title="No saved answers" body="Use the Apply Sprint question helper to generate answer options. Saved options will appear here for review before submission." />
+              )}
+            </Stack>
+          </CardContent>
+        </Card>
 
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", xl: "1fr 1fr" }, gap: 2 }}>
           <Card>

@@ -101,6 +101,48 @@ export async function approveApplicationPacket(applicationId: string) {
   };
 }
 
+export async function appendApplicationPacketAnswer(input: {
+  applicationId: string;
+  question: string;
+  generatedBy?: string;
+  options: Array<{
+    title: string;
+    answer: string;
+    evidence: string[];
+    tone: string;
+    cautions: string[];
+  }>;
+}) {
+  await syncApplicationPacket(input.applicationId);
+  const packet = await prisma.applicationPacket.findUnique({
+    where: { applicationId: input.applicationId },
+    select: { applicationAnswersJson: true },
+  });
+  if (!packet) throw new Error("Application packet not found.");
+
+  const current = applicationAnswerEntries(packet.applicationAnswersJson);
+  const entry = {
+    id: `answer_${Date.now()}`,
+    question: input.question,
+    generatedBy: input.generatedBy ?? "unknown",
+    options: input.options,
+    createdAt: new Date().toISOString(),
+  };
+
+  await prisma.applicationPacket.update({
+    where: { applicationId: input.applicationId },
+    data: {
+      applicationAnswersJson: [...current, entry] as Prisma.InputJsonValue,
+    },
+  });
+
+  return {
+    saved: true,
+    answerCount: current.length + 1,
+    entry,
+  };
+}
+
 export async function backfillApplicationPackets(limit = 200) {
   const applications = await prisma.application.findMany({
     select: { id: true },
@@ -231,6 +273,27 @@ export function packetApprovalChecklist(packet: Pick<ApplicationPacket, "status"
         : "No blocking QA issues are recorded.",
     },
   ];
+}
+
+export function applicationAnswerEntries(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is {
+    id?: string;
+    question: string;
+    generatedBy?: string;
+    options: Array<{
+      title: string;
+      answer: string;
+      evidence: string[];
+      tone: string;
+      cautions: string[];
+    }>;
+    createdAt?: string;
+  } => {
+    if (!item || typeof item !== "object") return false;
+    const entry = item as Record<string, unknown>;
+    return typeof entry.question === "string" && Array.isArray(entry.options);
+  });
 }
 
 async function findResumeProfileForApplication(application: {

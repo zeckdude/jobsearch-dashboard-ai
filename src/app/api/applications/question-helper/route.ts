@@ -2,17 +2,19 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { answerApplicationQuestion } from "@/lib/ai/application-question";
 import { apiError } from "@/lib/api";
+import { appendApplicationPacketAnswer } from "@/lib/applications/application-packets";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
 const requestSchema = z.object({
   question: z.string().trim().min(10).max(1200),
+  applicationId: z.string().trim().min(1).optional(),
 });
 
 export async function POST(request: Request) {
   try {
-    const { question } = requestSchema.parse(await request.json());
+    const { question, applicationId } = requestSchema.parse(await request.json());
     const profile = await prisma.userProfile.findFirst({
       include: {
         experienceBullets: { where: { truthLevel: "verified" }, orderBy: { createdAt: "desc" }, take: 120 },
@@ -36,9 +38,20 @@ export async function POST(request: Request) {
       githubRepositories: profile.githubRepositories,
     });
 
+    const savedAnswer = applicationId
+      ? await appendApplicationPacketAnswer({
+          applicationId,
+          question,
+          generatedBy: result.generatedBy,
+          options: result.options,
+        })
+      : null;
+
     return NextResponse.json({
       question,
       ...result,
+      savedToPacket: Boolean(savedAnswer),
+      packetAnswerCount: savedAnswer?.answerCount ?? null,
       context: {
         bulletsConsidered: profile.experienceBullets.length,
         projectsConsidered: profile.projects.length,
