@@ -83,6 +83,8 @@ export default async function JobDetailPage({ params }: { params: { id: string }
                 {topEvaluation ? <Chip variant="outlined" label={formatAction(topEvaluation.recommendedAction)} /> : null}
                 {topEvaluation?.recommendedResumeProfile ? <Chip variant="outlined" label={topEvaluation.recommendedResumeProfile} /> : null}
                 {job.source ? <Chip variant="outlined" label={job.source.name} /> : null}
+                {job.duplicateGroupId ? <Chip color="warning" variant="outlined" label="Duplicate group" /> : null}
+                {job.staleScore >= 45 ? <Chip color="warning" variant="outlined" label={`Stale ${job.staleScore}`} /> : null}
                 {job.applicationUrl ? <Chip variant="outlined" label="Application URL saved" /> : null}
               </Stack>
 

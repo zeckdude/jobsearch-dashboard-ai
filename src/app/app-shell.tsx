@@ -5,12 +5,16 @@ import { usePathname } from "next/navigation";
 import AssignmentTurnedInOutlinedIcon from "@mui/icons-material/AssignmentTurnedInOutlined";
 import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import BoltOutlinedIcon from "@mui/icons-material/BoltOutlined";
+import ConnectWithoutContactOutlinedIcon from "@mui/icons-material/ConnectWithoutContactOutlined";
 import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
 import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
+import HubOutlinedIcon from "@mui/icons-material/HubOutlined";
 import HistoryOutlinedIcon from "@mui/icons-material/HistoryOutlined";
+import InsightsOutlinedIcon from "@mui/icons-material/InsightsOutlined";
 import ManageSearchOutlinedIcon from "@mui/icons-material/ManageSearchOutlined";
 import PolicyOutlinedIcon from "@mui/icons-material/PolicyOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
+import SourceOutlinedIcon from "@mui/icons-material/SourceOutlined";
 import WorkOutlineOutlinedIcon from "@mui/icons-material/WorkOutlineOutlined";
 import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
@@ -34,10 +38,14 @@ const navItems = [
   { href: "/dashboard", label: "Command Center", eyebrow: "Home", icon: DashboardOutlinedIcon },
   { href: "/profiles", label: "1. Profiles", eyebrow: "Set intent", icon: ManageSearchOutlinedIcon },
   { href: "/evidence", label: "Evidence", eyebrow: "Truth layer", icon: PolicyOutlinedIcon },
+  { href: "/sources", label: "Sources", eyebrow: "Company list", icon: SourceOutlinedIcon },
+  { href: "/agents", label: "Agent Board", eyebrow: "Review advice", icon: HubOutlinedIcon },
   { href: "/jobs", label: "2. Review Jobs", eyebrow: "Approve matches", icon: WorkOutlineOutlinedIcon },
   { href: "/resumes", label: "3. Materials", eyebrow: "Resume source", icon: FactCheckOutlinedIcon },
   { href: "/applications", label: "4. Ready Queue", eyebrow: "Track packages", icon: AssignmentTurnedInOutlinedIcon },
   { href: "/applications/assistant", label: "5. Apply Sprint", eyebrow: "Submit manually", icon: BoltOutlinedIcon },
+  { href: "/networking", label: "Networking", eyebrow: "Recruiter drafts", icon: ConnectWithoutContactOutlinedIcon },
+  { href: "/outcomes", label: "Outcomes", eyebrow: "Learn patterns", icon: InsightsOutlinedIcon },
   { href: "/runs", label: "Search Runs", eyebrow: "Worker logs", icon: HistoryOutlinedIcon },
   { href: "/settings", label: "Settings", eyebrow: "Sources", icon: SettingsOutlinedIcon },
 ];

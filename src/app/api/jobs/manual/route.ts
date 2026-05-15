@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { apiError } from "@/lib/api";
+import { runDuplicateStaleJobDetectorAgent } from "@/lib/agents/duplicate-stale-job-detector";
 import { runJobFitScoringAgent } from "@/lib/agents/job-fit-scorer";
+import { apiError } from "@/lib/api";
 import { createCanonicalJobKey, createJobContentHash } from "@/lib/job-search/dedupe";
 import { scoreJobForProfile } from "@/lib/job-search/scoring";
+import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +50,7 @@ export async function POST(request: Request) {
     });
     const user = await prisma.user.findFirst({ orderBy: { createdAt: "asc" } });
     const matches = [];
+    await runDuplicateStaleJobDetectorAgent({ jobPostingId: job.id, userId: user?.id }).catch(() => null);
 
     for (const profile of profiles) {
       const score = scoreJobForProfile(normalized, profile);

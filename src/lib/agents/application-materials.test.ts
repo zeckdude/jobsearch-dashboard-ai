@@ -1,0 +1,56 @@
+import type { CandidateEvidence, JobPosting, JobSearchProfile } from "@prisma/client";
+import { describe, expect, it } from "vitest";
+import { reviewApplicationMaterials } from "@/lib/agents/application-qa";
+import { buildResumeStrategy } from "@/lib/agents/resume-strategy";
+
+describe("buildResumeStrategy", () => {
+  it("chooses security positioning from role and evidence", () => {
+    const strategy = buildResumeStrategy({
+      job: {
+        title: "Senior Frontend Engineer, Identity",
+        company: "Example Security",
+        description: "Build React admin consoles for passkeys, authentication, WebAuthn, and enterprise security workflows.",
+      } as JobPosting,
+      profile: {
+        name: "Security SaaS",
+        titles: ["Senior Frontend Engineer"],
+        keywordsRequired: ["React", "TypeScript"],
+        keywordsPreferred: ["WebAuthn", "passkeys"],
+        industries: ["security", "identity"],
+      } as unknown as JobSearchProfile,
+      evidence: [
+        {
+          id: "ev1",
+          title: "WebAuthn Core",
+          content: "Reusable passkey orchestration package.",
+          type: "PROJECT",
+          tags: ["webauthn", "passkeys", "security", "typescript"],
+        },
+      ] as CandidateEvidence[],
+    });
+
+    expect(strategy.recommendedResumeProfile).toContain("Security");
+    expect(strategy.evidenceRefs).toEqual(["ev1"]);
+    expect(strategy.priorityProjects).toContain("WebAuthn Core");
+  });
+});
+
+describe("reviewApplicationMaterials", () => {
+  it("flags style violations and risky unsupported claims", () => {
+    const qa = reviewApplicationMaterials({
+      job: {
+        title: "Frontend Engineer",
+        company: "Example Co",
+        description: "React and TypeScript role.",
+      } as JobPosting,
+      resumeMarkdown: "# Candidate\nManaged a team of engineers — built React systems.",
+      coverLetterBody: "I am excited to apply. It is not just frontend, it is impact.",
+      evidenceRefs: [],
+    });
+
+    expect(qa.status).toBe("NEEDS_REVIEW");
+    expect(qa.styleViolations.length).toBeGreaterThan(0);
+    expect(qa.unsupportedClaims.some((claim) => claim.includes("people-management"))).toBe(true);
+    expect(qa.warnings).toContain("No evidence references are attached to these materials.");
+  });
+});

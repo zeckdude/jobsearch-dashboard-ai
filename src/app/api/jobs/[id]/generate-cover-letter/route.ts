@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { apiError } from "@/lib/api";
 import { generateCoverLetterForJob } from "@/lib/ai/resume";
+import { attachCoverLetterQa, createResumeStrategy } from "@/lib/applications/material-agents";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +35,12 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
       return NextResponse.json({ error: "Job, match, and approved candidate profile are required." }, { status: 400 });
     }
 
+    const match = job.matches[0];
+    const strategy = await createResumeStrategy({
+      jobPostingId: job.id,
+      jobSearchProfileId: match.jobSearchProfileId,
+      userId: user.id,
+    });
     const latestUploadId = user.profile.resumeUploads[0]?.id;
     const uploadBullets = latestUploadId
       ? user.profile.experienceBullets.filter((bullet) => bullet.sourceResumeUploadId === latestUploadId)
@@ -51,7 +58,7 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
       data: {
         userId: user.id,
         jobPostingId: job.id,
-        jobProfileMatchId: job.matches[0].id,
+        jobProfileMatchId: match.id,
         body: generated.body,
         generationNotes: {
           generatedBy: generated.generatedBy,
@@ -59,15 +66,26 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
           warnings: generated.warnings,
           unsupportedClaimsDetected: generated.unsupportedClaimsDetected,
           resumeId: job.resumes[0]?.id ?? null,
+          resumeStrategy: strategy,
         } as Prisma.InputJsonValue,
       },
     });
+    const coverLetterQa = await attachCoverLetterQa({
+      coverLetter,
+      resumeMarkdown: job.resumes[0]?.markdown,
+      userId: user.id,
+      strategy,
+    });
+    const reviewedCoverLetter = await prisma.generatedCoverLetter.update({
+      where: { id: coverLetter.id },
+      data: { generationNotes: coverLetterQa.notes },
+    });
     await prisma.jobProfileMatch.update({
-      where: { id: job.matches[0].id },
+      where: { id: match.id },
       data: { status: "cover_letter_generated" },
     });
 
-    return NextResponse.json({ coverLetter });
+    return NextResponse.json({ coverLetter: reviewedCoverLetter });
   } catch (error) {
     return apiError(error, 400);
   }

@@ -137,6 +137,18 @@ enum ApplicationEventType {
   follow_up_completed
 }
 
+enum ApplicationOutcomeType {
+  APPLIED
+  REJECTED
+  GHOSTED
+  RECRUITER_SCREEN
+  TECH_SCREEN
+  ONSITE
+  FINAL
+  OFFER
+  CLOSED
+}
+
 enum NotificationType {
   email
   push
@@ -215,6 +227,14 @@ enum JobRecommendedAction {
   NEEDS_REVIEW
 }
 
+enum RecruiterOutreachStatus {
+  DRAFT
+  SENT
+  REPLIED
+  NO_RESPONSE
+  ARCHIVED
+}
+
 model User {
   id                   String                 @id @default(cuid())
   email                String                 @unique
@@ -227,7 +247,9 @@ model User {
   coverLetters         GeneratedCoverLetter[]
   notificationLogs     NotificationLog[]
   notificationSettings NotificationSettings?
+  outcomes             ApplicationOutcome[]
   profile              UserProfile?
+  recruiterOutreach    RecruiterOutreach[]
   resumeUploads        ResumeUpload[]
   resumes              GeneratedResume[]
   searchProfiles       JobSearchProfile[]
@@ -283,10 +305,26 @@ model CandidateEvidence {
   createdAt                  DateTime                    @default(now())
   updatedAt                  DateTime                    @updatedAt
   candidateProfile           UserProfile                 @relation(fields: [candidateProfileId], references: [id], onDelete: Cascade)
+  embeddings                 EvidenceEmbedding[]
 
   @@index([candidateProfileId, confidence])
   @@index([candidateProfileId, type])
   @@index([sourceType, sourceRef])
+}
+
+model EvidenceEmbedding {
+  id          String            @id @default(cuid())
+  evidenceId  String
+  model       String
+  dimensions  Int
+  vector      Json              @default("[]")
+  contentHash String
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  evidence    CandidateEvidence @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+
+  @@unique([evidenceId, model, contentHash])
+  @@index([model, createdAt])
 }
 
 model GithubRepository {
@@ -390,6 +428,8 @@ model JobPosting {
   atsProvider    AtsProvider            @default(unknown)
   rawData        Json                   @default("{}")
   contentHash    String                 @unique
+  duplicateGroupId String?
+  staleScore     Int                    @default(0)
   firstSeenAt    DateTime               @default(now())
   lastSeenAt     DateTime               @default(now())
   createdAt      DateTime               @default(now())
@@ -398,10 +438,14 @@ model JobPosting {
   coverLetters   GeneratedCoverLetter[]
   evaluations     JobEvaluation[]
   matches        JobProfileMatch[]
+  outcomes       ApplicationOutcome[]
+  recruiterOutreach RecruiterOutreach[]
   resumes        GeneratedResume[]
   source         JobSource?             @relation(fields: [sourceId], references: [id], onDelete: SetNull)
 
   @@index([company, title])
+  @@index([duplicateGroupId])
+  @@index([staleScore, lastSeenAt])
   @@index([sourceId, sourceJobId])
   @@index([applicationUrl])
 }
@@ -477,6 +521,7 @@ model Application {
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
   events            ApplicationEvent[]
+  outcomes          ApplicationOutcome[]
   coverLetter       GeneratedCoverLetter? @relation(fields: [coverLetterId], references: [id])
   jobPosting        JobPosting        @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
   jobProfileMatch   JobProfileMatch?  @relation(fields: [jobProfileMatchId], references: [id], onDelete: SetNull)
@@ -642,6 +687,24 @@ model ApplicationEvent {
   application   Application          @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 }
 
+model ApplicationOutcome {
+  id            String                 @id @default(cuid())
+  userId        String
+  applicationId String
+  jobPostingId  String
+  outcome       ApplicationOutcomeType
+  notes         String?
+  occurredAt    DateTime               @default(now())
+  createdAt     DateTime               @default(now())
+  application   Application            @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  jobPosting    JobPosting             @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
+  user          User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, occurredAt])
+  @@index([applicationId, occurredAt])
+  @@index([jobPostingId, outcome])
+}
+
 model Contact {
   id           String        @id @default(cuid())
   userId       String
@@ -654,7 +717,30 @@ model Contact {
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   applications Application[]
+  recruiterOutreach RecruiterOutreach[]
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model RecruiterOutreach {
+  id             String                  @id @default(cuid())
+  userId         String
+  contactId      String?
+  jobPostingId   String?
+  message        String
+  status         RecruiterOutreachStatus @default(DRAFT)
+  followUpAt     DateTime?
+  evidenceRefs   Json                    @default("[]")
+  qualityReview  Json                    @default("{}")
+  notes          String?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+  contact        Contact?                @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  jobPosting     JobPosting?             @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
+  user           User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([jobPostingId, createdAt])
+  @@index([contactId, createdAt])
 }
 
 model NotificationSettings {

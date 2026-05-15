@@ -28,6 +28,21 @@ type AtsChecks = {
   textExtractable?: boolean;
 };
 
+type MaterialNotes = {
+  applicationQa?: {
+    status?: "PASS" | "NEEDS_REVIEW";
+    score?: number;
+    warnings?: string[];
+    unsupportedClaims?: string[];
+    styleViolations?: string[];
+  };
+  resumeStrategy?: {
+    recommendedResumeProfile?: string;
+    positioningSummary?: string;
+    emphasisTags?: string[];
+  } | null;
+};
+
 export default async function GeneratedResumesPage() {
   const [resumes, coverLetters] = await Promise.all([
     prisma.generatedResume.findMany({
@@ -104,6 +119,7 @@ export default async function GeneratedResumesPage() {
                 <TableCell>Resume</TableCell>
                 <TableCell>Version</TableCell>
                 <TableCell>ATS score</TableCell>
+                <TableCell>QA</TableCell>
                 <TableCell>Cover letter</TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
@@ -111,13 +127,14 @@ export default async function GeneratedResumesPage() {
             <TableBody>
               {resumes.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5}>
+                  <TableCell colSpan={6}>
                     <EmptyState title="No generated resumes" body="Open an approved job and generate an ATS-friendly tailored resume." />
                   </TableCell>
                 </TableRow>
               ) : (
                 resumes.map((resume) => {
                   const atsChecks = resume.atsChecks as AtsChecks;
+                  const notes = materialNotes(resume.generationNotes);
                   const coverLetter = resume.jobPosting.coverLetters[0];
                   return (
                     <TableRow
@@ -151,6 +168,9 @@ export default async function GeneratedResumesPage() {
                       </TableCell>
                       <TableCell>v{resume.version}</TableCell>
                       <TableCell>{typeof atsChecks.score === "number" ? <ScoreChip score={atsChecks.score} /> : <Chip label="Unchecked" />}</TableCell>
+                      <TableCell>
+                        <MaterialQaSummary notes={notes} />
+                      </TableCell>
                       <TableCell>
                         {coverLetter ? (
                           <Stack spacing={0.75}>
@@ -219,6 +239,7 @@ export default async function GeneratedResumesPage() {
               >
                 <TableCell>Cover letter</TableCell>
                 <TableCell>Version</TableCell>
+                <TableCell>QA</TableCell>
                 <TableCell>Preview</TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
@@ -226,65 +247,69 @@ export default async function GeneratedResumesPage() {
             <TableBody>
               {coverLetters.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4}>
+                  <TableCell colSpan={5}>
                     <EmptyState title="No generated cover letters" body="Open an approved job and generate a cover letter, or prepare the full application package." />
                   </TableCell>
                 </TableRow>
               ) : (
-                coverLetters.map((coverLetter) => (
-                  <TableRow
-                    key={coverLetter.id}
-                    hover
-                    sx={{
-                      "& td": { py: 2.25 },
-                      "&:last-child td": { borderBottom: 0 },
-                    }}
-                  >
-                    <TableCell>
-                      <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
-                        <Box
-                          aria-hidden
+                coverLetters.map((coverLetter) => {
+                  const notes = materialNotes(coverLetter.generationNotes);
+                  return (
+                    <TableRow
+                      key={coverLetter.id}
+                      hover
+                      sx={{
+                        "& td": { py: 2.25 },
+                        "&:last-child td": { borderBottom: 0 },
+                      }}
+                    >
+                      <TableCell>
+                        <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
+                          <Box
+                            aria-hidden
+                            sx={{
+                              width: 4,
+                              height: 44,
+                              bgcolor: "secondary.main",
+                              borderRadius: 999,
+                              opacity: 0.75,
+                            }}
+                          />
+                          <Box>
+                            <Typography sx={{ fontWeight: 850, lineHeight: 1.25 }}>{coverLetter.jobPosting.company}</Typography>
+                            <Typography variant="body2" color="text.secondary">{coverLetter.jobPosting.title}</Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              Created {coverLetter.createdAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                            </Typography>
+                          </Box>
+                        </Stack>
+                      </TableCell>
+                      <TableCell>v{coverLetter.version}</TableCell>
+                      <TableCell><MaterialQaSummary notes={notes} /></TableCell>
+                      <TableCell sx={{ maxWidth: 460 }}>
+                        <Typography
+                          variant="body2"
+                          color="text.secondary"
                           sx={{
-                            width: 4,
-                            height: 44,
-                            bgcolor: "secondary.main",
-                            borderRadius: 999,
-                            opacity: 0.75,
+                            display: "-webkit-box",
+                            WebkitBoxOrient: "vertical",
+                            WebkitLineClamp: 3,
+                            overflow: "hidden",
                           }}
-                        />
-                        <Box>
-                          <Typography sx={{ fontWeight: 850, lineHeight: 1.25 }}>{coverLetter.jobPosting.company}</Typography>
-                          <Typography variant="body2" color="text.secondary">{coverLetter.jobPosting.title}</Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            Created {coverLetter.createdAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                          </Typography>
-                        </Box>
-                      </Stack>
-                    </TableCell>
-                    <TableCell>v{coverLetter.version}</TableCell>
-                    <TableCell sx={{ maxWidth: 460 }}>
-                      <Typography
-                        variant="body2"
-                        color="text.secondary"
-                        sx={{
-                          display: "-webkit-box",
-                          WebkitBoxOrient: "vertical",
-                          WebkitLineClamp: 3,
-                          overflow: "hidden",
-                        }}
-                      >
-                        {coverLetter.body}
-                      </Typography>
-                    </TableCell>
-                    <TableCell align="right">
-                      <Stack direction="row" spacing={0.5} sx={{ justifyContent: "flex-end" }}>
-                        <ActionButton href={`/api/cover-letters/${coverLetter.id}/plain-text`} size="small" startIcon={<VisibilityOutlinedIcon />}>Text</ActionButton>
-                        <ActionButton href={`/api/cover-letters/${coverLetter.id}/pdf`} size="small" startIcon={<DownloadOutlinedIcon />}>PDF</ActionButton>
-                        <ActionButton href={`/jobs/${coverLetter.jobPosting.id}`} size="small">Open job</ActionButton>
-                      </Stack>
-                    </TableCell>
-                  </TableRow>
-                ))
+                        >
+                          {coverLetter.body}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Stack direction="row" spacing={0.5} sx={{ justifyContent: "flex-end" }}>
+                          <ActionButton href={`/api/cover-letters/${coverLetter.id}/plain-text`} size="small" startIcon={<VisibilityOutlinedIcon />}>Text</ActionButton>
+                          <ActionButton href={`/api/cover-letters/${coverLetter.id}/pdf`} size="small" startIcon={<DownloadOutlinedIcon />}>PDF</ActionButton>
+                          <ActionButton href={`/jobs/${coverLetter.jobPosting.id}`} size="small">Open job</ActionButton>
+                        </Stack>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>
@@ -292,4 +317,38 @@ export default async function GeneratedResumesPage() {
       </Stack>
     </AppShell>
   );
+}
+
+function MaterialQaSummary({ notes }: { notes: MaterialNotes }) {
+  const qa = notes.applicationQa;
+  const strategy = notes.resumeStrategy;
+  const issueCount = (qa?.warnings?.length ?? 0) + (qa?.unsupportedClaims?.length ?? 0) + (qa?.styleViolations?.length ?? 0);
+
+  return (
+    <Stack spacing={0.75}>
+      {qa ? (
+        <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+          <Chip
+            size="small"
+            color={qa.status === "PASS" ? "success" : "warning"}
+            variant="outlined"
+            label={qa.status === "PASS" ? "QA pass" : "Needs review"}
+          />
+          {typeof qa.score === "number" ? <ScoreChip score={qa.score} /> : null}
+        </Stack>
+      ) : (
+        <Chip size="small" label="QA pending" />
+      )}
+      {strategy?.recommendedResumeProfile ? (
+        <Typography variant="caption" color="text.secondary">{strategy.recommendedResumeProfile}</Typography>
+      ) : null}
+      {issueCount > 0 ? (
+        <Typography variant="caption" color="warning.main">{issueCount} review item{issueCount === 1 ? "" : "s"}</Typography>
+      ) : null}
+    </Stack>
+  );
+}
+
+function materialNotes(value: unknown): MaterialNotes {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as MaterialNotes : {};
 }

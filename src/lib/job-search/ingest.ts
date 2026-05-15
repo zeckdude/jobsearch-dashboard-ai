@@ -1,4 +1,5 @@
 import { JobSearchRun, NotificationSettings, Prisma, User } from "@prisma/client";
+import { runDuplicateStaleJobDetectorAgent } from "@/lib/agents/duplicate-stale-job-detector";
 import { runJobFitScoringAgent } from "@/lib/agents/job-fit-scorer";
 import { createCanonicalJobKey, createJobContentHash } from "@/lib/job-search/dedupe";
 import { getAdapterForSource } from "@/lib/job-search/adapters";
@@ -152,6 +153,9 @@ export async function runJobSearch(triggeredBy: "manual" | "cron" = "manual", ru
     },
   });
   await appendProgress(run.id, `Search ${status}. Saved ${stats.jobsSaved} new matches from ${stats.jobsFetched} fetched jobs.`, stats);
+  await runDuplicateStaleJobDetectorAgent({ limit: 1000, userId: user?.id }).catch(async (error) => {
+    await appendProgress(run.id, `Duplicate/stale detector failed: ${error instanceof Error ? error.message : "Unknown detector failure"}`, stats);
+  });
 
   if (user?.notificationSettings) {
     await notifyAfterRun(user, user.notificationSettings, updatedRun, newMatches);

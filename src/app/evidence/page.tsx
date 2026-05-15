@@ -14,6 +14,8 @@ import { PageHeader } from "@/components/ui/page-header";
 import { jsonArray } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
 import { BackfillEvidenceButton } from "./backfill-button";
+import { AddEvidenceNoteForm } from "./add-evidence-note-form";
+import { EmbedEvidenceButton } from "./embed-evidence-button";
 import { EvidenceActions } from "./evidence-actions";
 
 export const dynamic = "force-dynamic";
@@ -33,6 +35,7 @@ export default async function EvidencePage({ searchParams }: { searchParams?: Ev
     },
     include: {
       candidateProfile: { select: { fullName: true } },
+      embeddings: { select: { model: true, dimensions: true, updatedAt: true }, orderBy: { updatedAt: "desc" }, take: 1 },
     },
     orderBy: [{ confidence: "asc" }, { updatedAt: "desc" }],
     take: 120,
@@ -45,8 +48,15 @@ export default async function EvidencePage({ searchParams }: { searchParams?: Ev
           eyebrow="Truth layer"
           title="Evidence Library"
           description="Review the career facts the system is allowed to use. Final resumes, cover letters, and outreach should only use verified or approved inferred evidence."
-          actions={<BackfillEvidenceButton />}
+          actions={
+            <>
+              <BackfillEvidenceButton />
+              <EmbedEvidenceButton />
+            </>
+          }
         />
+
+        <AddEvidenceNoteForm />
 
         <Card>
           <CardContent>
@@ -89,6 +99,7 @@ export default async function EvidencePage({ searchParams }: { searchParams?: Ev
                           <Typography variant="h3">{item.title}</Typography>
                           <Chip size="small" label={formatLabel(item.type)} />
                           <Chip size="small" color={confidenceColor(item.confidence)} variant="outlined" label={formatLabel(item.confidence)} />
+                          {item.embeddings[0] ? <Chip size="small" color="primary" variant="outlined" label={`${item.embeddings[0].dimensions}d embedding`} /> : <Chip size="small" variant="outlined" label="Not embedded" />}
                         </Stack>
                         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                           {formatLabel(item.sourceType)}{item.sourceRef ? ` · ${item.sourceRef}` : ""} · {item.candidateProfile.fullName}

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { apiError } from "@/lib/api";
+import { attachResumeQa, createResumeStrategy } from "@/lib/applications/material-agents";
 import { prisma } from "@/lib/prisma";
 import { tailorResumeForJob } from "@/lib/ai/resume";
 import { checkAtsReadability } from "@/lib/resumes/ats";
@@ -31,6 +32,12 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
       return NextResponse.json({ error: "Job, match, and approved candidate profile are required." }, { status: 400 });
     }
 
+    const match = job.matches[0];
+    const strategy = await createResumeStrategy({
+      jobPostingId: job.id,
+      jobSearchProfileId: match.jobSearchProfileId,
+      userId: user.id,
+    });
     const latestUploadId = user.profile.resumeUploads[0]?.id;
     const uploadBullets = latestUploadId
       ? user.profile.experienceBullets.filter((bullet) => bullet.sourceResumeUploadId === latestUploadId)
@@ -55,7 +62,7 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
       data: {
         userId: user.id,
         jobPostingId: job.id,
-        jobProfileMatchId: job.matches[0].id,
+        jobProfileMatchId: match.id,
         markdown,
         plainText,
         html: `<pre>${escapeHtml(plainText)}</pre>`,
@@ -68,16 +75,22 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
           validation: tailored.validation,
           selectedExperienceBullets: tailored.selectedExperienceBullets,
           projectSelections: tailored.projectSelections,
+          resumeStrategy: strategy,
         } as Prisma.InputJsonValue,
         atsChecks: atsChecks as Prisma.InputJsonValue,
       },
     });
+    const resumeQa = await attachResumeQa({ resume, userId: user.id, strategy });
+    const reviewedResume = await prisma.generatedResume.update({
+      where: { id: resume.id },
+      data: { generationNotes: resumeQa.notes },
+    });
     await prisma.jobProfileMatch.update({
-      where: { id: job.matches[0].id },
+      where: { id: match.id },
       data: { status: "resume_generated" },
     });
 
-    return NextResponse.json({ resume });
+    return NextResponse.json({ resume: reviewedResume });
   } catch (error) {
     return apiError(error, 400);
   }

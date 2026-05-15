@@ -4,6 +4,7 @@ import Stack from "@mui/material/Stack";
 import { AppShell } from "@/app/app-shell";
 import { ActionButton } from "@/components/action-button";
 import { BulkPrepareControl } from "@/components/bulk-prepare-control";
+import { DetectJobQualityControl } from "@/components/detect-job-quality-control";
 import { EvaluateJobsControl } from "@/components/evaluate-jobs-control";
 import { PageHeader } from "@/components/ui/page-header";
 import { WorkflowGuide } from "@/components/ui/workflow-guide";
@@ -55,6 +56,7 @@ export default async function JobsPage({ searchParams }: { searchParams?: { stat
           actions={
             <>
               <ActionButton href="/jobs/manual" variant="outlined" startIcon={<AddIcon />}>Add manual job</ActionButton>
+              <DetectJobQualityControl />
               <EvaluateJobsControl />
               <RunSearchControl compact />
             </>
@@ -75,7 +77,9 @@ export default async function JobsPage({ searchParams }: { searchParams?: { stat
               id: match.id,
               jobId: match.jobPosting.id,
               opportunityScore: evaluation?.opportunityScore ?? null,
+              duplicateGroupId: match.jobPosting.duplicateGroupId,
               score: match.overallScore,
+              staleScore: match.jobPosting.staleScore,
               title: match.jobPosting.title,
               company: match.jobPosting.company,
               location: match.jobPosting.location ?? "Unknown location",

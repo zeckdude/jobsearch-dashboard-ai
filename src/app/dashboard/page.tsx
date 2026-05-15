@@ -22,11 +22,28 @@ import { RunSearchControl } from "@/components/run-search-control";
 import { jsonArray } from "@/lib/json";
 import { uniqueMatchesByCanonicalJob } from "@/lib/job-search/unique-matches";
 import { prisma } from "@/lib/prisma";
+import { RunDailyPlanButton } from "./daily-plan-card";
 
 export const dynamic = "force-dynamic";
 
+type DailyPlanOutput = {
+  generatedAt?: string;
+  summary?: string;
+  actions?: Array<{
+    priority: number;
+    category: string;
+    title: string;
+    detail: string;
+    href: string;
+    count?: number;
+  }>;
+  blockers?: string[];
+  confidence?: number;
+  rationale?: string;
+};
+
 export default async function DashboardPage() {
-  const [profiles, latestRun, statusCounts, needsReview] = await Promise.all([
+  const [profiles, latestRun, statusCounts, needsReview, latestDailyPlanRun] = await Promise.all([
     prisma.jobSearchProfile.findMany({ where: { enabled: true }, orderBy: { name: "asc" } }),
     prisma.jobSearchRun.findFirst({ orderBy: { startedAt: "desc" } }),
     prisma.jobProfileMatch.groupBy({ by: ["status"], _count: { status: true } }),
@@ -39,10 +56,15 @@ export default async function DashboardPage() {
       orderBy: [{ overallScore: "desc" }, { createdAt: "desc" }],
       take: 50,
     }),
+    prisma.agentRun.findFirst({
+      where: { agentType: "DAILY_COMMAND_CENTER", status: "COMPLETED" },
+      orderBy: { createdAt: "desc" },
+    }),
   ]);
   const visibleNeedsReview = uniqueMatchesByCanonicalJob(needsReview).slice(0, 5);
   const countByStatus = new Map(statusCounts.map((count) => [count.status, count._count.status]));
   const readyToApply = countByStatus.get("ready_to_apply") ?? 0;
+  const dailyPlan = dailyPlanOutput(latestDailyPlanRun?.outputJson);
 
   return (
     <AppShell>
@@ -60,6 +82,49 @@ export default async function DashboardPage() {
         />
 
         <WorkflowGuide title="How a job reaches Apply Sprint" />
+
+        <Card sx={{ borderColor: "primary.light" }}>
+          <CardContent>
+            <Stack spacing={2}>
+              <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
+                <Box>
+                  <Typography variant="h3">Daily Plan</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {dailyPlan?.summary ?? "Generate a short prioritized plan from jobs, applications, evidence, outcomes, and profile health."}
+                  </Typography>
+                  {dailyPlan?.generatedAt ? (
+                    <Typography variant="caption" color="text.secondary">
+                      Generated {new Date(dailyPlan.generatedAt).toLocaleString()}
+                    </Typography>
+                  ) : null}
+                </Box>
+                <RunDailyPlanButton />
+              </Stack>
+              {dailyPlan?.actions?.length ? (
+                <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(3, 1fr)" }, gap: 1.5 }}>
+                  {dailyPlan.actions.slice(0, 6).map((action) => (
+                    <Box key={`${action.priority}-${action.title}`} sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.5, bgcolor: "background.paper" }}>
+                      <Stack spacing={1}>
+                        <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between" }}>
+                          <Chip size="small" color="primary" variant="outlined" label={`P${action.priority}`} />
+                          {typeof action.count === "number" ? <Chip size="small" label={action.count} /> : null}
+                        </Stack>
+                        <Typography sx={{ fontWeight: 850 }}>{action.title}</Typography>
+                        <Typography variant="body2" color="text.secondary">{action.detail}</Typography>
+                        <ActionButton href={action.href} size="small" endIcon={<OpenInNewIcon />}>Open</ActionButton>
+                      </Stack>
+                    </Box>
+                  ))}
+                </Box>
+              ) : null}
+              {dailyPlan?.blockers?.length ? (
+                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+                  {dailyPlan.blockers.map((blocker) => <Chip key={blocker} size="small" color="warning" variant="outlined" label={blocker} />)}
+                </Stack>
+              ) : null}
+            </Stack>
+          </CardContent>
+        </Card>
 
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: "repeat(4, 1fr)" }, gap: 2 }}>
           <Metric label="Enabled profiles" value={profiles.length.toString()} helper="Active campaigns" />
@@ -166,6 +231,10 @@ export default async function DashboardPage() {
       </Stack>
     </AppShell>
   );
+}
+
+function dailyPlanOutput(value: unknown): DailyPlanOutput | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as DailyPlanOutput : null;
 }
 
 function Metric({ label, value, helper }: { label: string; value: string; helper: string }) {

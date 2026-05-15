@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { generateCoverLetterForJob, tailorResumeForJob } from "@/lib/ai/resume";
+import { attachCoverLetterQa, attachResumeQa, createResumeStrategy } from "@/lib/applications/material-agents";
 import { prisma } from "@/lib/prisma";
 import { checkAtsReadability } from "@/lib/resumes/ats";
 
@@ -40,6 +41,11 @@ export async function prepareApplicationPackage(jobId: string) {
     : [];
   const sourceBullets = uploadBullets.length >= 8 ? uploadBullets : user.profile.experienceBullets;
   const parsedUpload = user.profile.resumeUploads[0]?.parsedJson as { education?: string[]; certifications?: string[] } | undefined;
+  const strategy = await createResumeStrategy({
+    jobPostingId: job.id,
+    jobSearchProfileId: match.jobSearchProfileId,
+    userId: user.id,
+  });
 
   if (!resume) {
     const tailored = await tailorResumeForJob({
@@ -70,10 +76,16 @@ export async function prepareApplicationPackage(jobId: string) {
           validation: tailored.validation,
           selectedExperienceBullets: tailored.selectedExperienceBullets,
           projectSelections: tailored.projectSelections,
+          resumeStrategy: strategy,
           preparedApplicationPackage: true,
         } as Prisma.InputJsonValue,
         atsChecks: atsChecks as Prisma.InputJsonValue,
       },
+    });
+    const resumeQa = await attachResumeQa({ resume, userId: user.id, strategy });
+    resume = await prisma.generatedResume.update({
+      where: { id: resume.id },
+      data: { generationNotes: resumeQa.notes },
     });
   }
 
@@ -98,9 +110,20 @@ export async function prepareApplicationPackage(jobId: string) {
           warnings: generated.warnings,
           unsupportedClaimsDetected: generated.unsupportedClaimsDetected,
           resumeId: resume.id,
+          resumeStrategy: strategy,
           preparedApplicationPackage: true,
         } as Prisma.InputJsonValue,
       },
+    });
+    const coverLetterQa = await attachCoverLetterQa({
+      coverLetter,
+      resumeMarkdown: resume.markdown,
+      userId: user.id,
+      strategy,
+    });
+    coverLetter = await prisma.generatedCoverLetter.update({
+      where: { id: coverLetter.id },
+      data: { generationNotes: coverLetterQa.notes },
     });
   }
 

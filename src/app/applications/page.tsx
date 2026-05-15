@@ -8,6 +8,7 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import PlayCircleOutlineOutlinedIcon from "@mui/icons-material/PlayCircleOutlineOutlined";
 import BoltOutlinedIcon from "@mui/icons-material/BoltOutlined";
+import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
 import Link from "next/link";
 import { AppShell } from "@/app/app-shell";
 import { ActionButton } from "@/components/action-button";
@@ -99,6 +100,11 @@ export default async function ApplicationsPage() {
                             {application.resume ? <Chip size="small" color="success" variant="outlined" label="Resume" /> : null}
                             {application.coverLetter ? <Chip size="small" color="secondary" variant="outlined" label="Cover letter" /> : null}
                           </Stack>
+                          <Box sx={{ mt: 1 }}>
+                            <ActionButton href={`/applications/${application.id}`} size="small" variant="outlined" startIcon={<FactCheckOutlinedIcon />}>
+                              Review packet
+                            </ActionButton>
+                          </Box>
                           {application.jobPosting.applicationUrl ? (
                             <Button
                               component={Link}

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { classifyConfidence, classifyEvidenceType } from "@/lib/agents/candidate-intelligence";
 import { confidenceMeetsMinimum, truthLevelToEvidenceConfidence } from "@/lib/evidence/confidence";
-import { scoreEvidenceText } from "@/lib/evidence/retrieval";
+import { createResumeEvidenceChunks } from "@/lib/evidence/ingest";
+import { dedupeRetrievedEvidence, scoreEvidenceText } from "@/lib/evidence/retrieval";
 import { inferEvidenceTags } from "@/lib/evidence/tags";
 
 describe("evidence confidence rules", () => {
@@ -43,6 +44,52 @@ describe("evidence retrieval scoring", () => {
     };
     expect(scoreEvidenceText(evidence, "authentication", ["identity"])).toBeGreaterThan(0);
     expect(scoreEvidenceText(evidence, "authentication", ["defense-tech"])).toBe(0);
+  });
+
+  it("deduplicates broad resume snapshots", () => {
+    const now = new Date();
+    const duplicateResume = "Senior frontend engineer with React TypeScript authentication dashboard experience.".repeat(30);
+    const evidence = dedupeRetrievedEvidence([
+      {
+        id: "ev1",
+        title: "Approved resume: Carl-Welch-CV-2026.pdf",
+        content: duplicateResume,
+        sourceType: "RESUME_UPLOAD" as const,
+        sourceRef: "upload-1",
+        updatedAt: now,
+        relevanceScore: 30,
+      },
+      {
+        id: "ev2",
+        title: "Approved resume: Carl-Welch-CV-2026-copy.pdf",
+        content: duplicateResume,
+        sourceType: "RESUME_UPLOAD" as const,
+        sourceRef: "upload-2",
+        updatedAt: now,
+        relevanceScore: 29,
+      },
+    ]);
+
+    expect(evidence).toHaveLength(1);
+    expect(evidence[0]?.id).toBe("ev1");
+  });
+
+  it("chunks resume uploads into focused evidence instead of one resume blob", () => {
+    const chunks = createResumeEvidenceChunks(`
+SUMMARY
+Senior frontend engineer focused on React and TypeScript product workflows.
+
+PROJECTS
+Progression Lab AI uses Next.js, OpenAI structured outputs, Prisma, and Stripe.
+WebAuthn Core provides reusable passkey orchestration.
+
+SKILLS
+React TypeScript Next.js Storybook Playwright
+`, "resume.pdf");
+
+    expect(chunks.length).toBeGreaterThanOrEqual(3);
+    expect(chunks.some((chunk) => chunk.type === "PROJECT" && chunk.content.includes("Progression Lab AI"))).toBe(true);
+    expect(chunks.every((chunk) => chunk.title.startsWith("Resume evidence:"))).toBe(true);
   });
 
   it("infers profile-relevant tags", () => {

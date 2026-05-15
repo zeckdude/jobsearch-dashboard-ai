@@ -1,0 +1,381 @@
+import AutoFixHighOutlinedIcon from "@mui/icons-material/AutoFixHighOutlined";
+import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
+import InsightsOutlinedIcon from "@mui/icons-material/InsightsOutlined";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
+import ReportProblemOutlinedIcon from "@mui/icons-material/ReportProblemOutlined";
+import Box from "@mui/material/Box";
+import Card from "@mui/material/Card";
+import CardContent from "@mui/material/CardContent";
+import Chip from "@mui/material/Chip";
+import Stack from "@mui/material/Stack";
+import Table from "@mui/material/Table";
+import TableBody from "@mui/material/TableBody";
+import TableCell from "@mui/material/TableCell";
+import TableContainer from "@mui/material/TableContainer";
+import TableHead from "@mui/material/TableHead";
+import TableRow from "@mui/material/TableRow";
+import Typography from "@mui/material/Typography";
+import { AppShell } from "@/app/app-shell";
+import { ActionButton } from "@/components/action-button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { PageHeader } from "@/components/ui/page-header";
+import { ScoreChip } from "@/components/ui/score-chip";
+import { StatusChip } from "@/components/ui/status-chip";
+import { jsonArray } from "@/lib/json";
+import { prisma } from "@/lib/prisma";
+
+export const dynamic = "force-dynamic";
+
+type AgentOutput = {
+  actions?: Array<{
+    priority?: number;
+    title?: string;
+    detail?: string;
+  }>;
+  confidence?: number;
+  reasoningSummary?: string;
+  rationale?: string;
+  warnings?: string[];
+  recommendedChanges?: Array<{ action?: string; summary?: string; profileName?: string }>;
+  profileHealthScores?: Array<{ name?: string; healthScore?: number; rationale?: string }>;
+  recommendedAction?: string;
+  fitScore?: number;
+  opportunityScore?: number;
+  confidenceScore?: number;
+  recommendedResumeProfile?: string | null;
+  strengths?: string[];
+  risks?: string[];
+  summary?: string;
+  applicationQa?: {
+    status?: string;
+    score?: number;
+    warnings?: string[];
+    unsupportedClaims?: string[];
+    styleViolations?: string[];
+  };
+  resumeStrategy?: {
+    recommendedResumeProfile?: string;
+    positioningSummary?: string;
+  };
+};
+
+export default async function AgentReviewBoardPage() {
+  const [runs, evidenceNeedsReview, jobEvaluations, profileOptimizerRun, dailyPlanRun, resumesNeedingReview, coverLettersNeedingReview] = await Promise.all([
+    prisma.agentRun.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 40,
+      include: { user: { select: { email: true, name: true } } },
+    }),
+    prisma.candidateEvidence.findMany({
+      where: { confidence: "NEEDS_REVIEW" },
+      orderBy: { updatedAt: "desc" },
+      take: 8,
+    }),
+    prisma.jobEvaluation.findMany({
+      where: { recommendedAction: { in: ["APPLY_NOW", "MAYBE_APPLY", "NEEDS_REVIEW"] } },
+      include: {
+        jobPosting: true,
+        jobSearchProfile: { select: { name: true } },
+      },
+      orderBy: [{ recommendedAction: "asc" }, { fitScore: "desc" }, { updatedAt: "desc" }],
+      take: 8,
+    }),
+    prisma.agentRun.findFirst({
+      where: { agentType: "SEARCH_PROFILE_MANAGER", status: "COMPLETED" },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.agentRun.findFirst({
+      where: { agentType: "DAILY_COMMAND_CENTER", status: "COMPLETED" },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.generatedResume.findMany({
+      include: { applications: { select: { id: true }, take: 1 }, jobPosting: true },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    }),
+    prisma.generatedCoverLetter.findMany({
+      include: { applications: { select: { id: true }, take: 1 }, jobPosting: true },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    }),
+  ]);
+  const latestProfileOutput = outputObject(profileOptimizerRun?.outputJson);
+  const latestDailyPlan = outputObject(dailyPlanRun?.outputJson);
+  const materialReviewItems = [
+    ...resumesNeedingReview.map((resume) => ({
+      id: resume.id,
+      applicationId: resume.applications[0]?.id ?? null,
+      type: "Resume",
+      jobId: resume.jobPostingId,
+      title: resume.jobPosting.title,
+      company: resume.jobPosting.company,
+      notes: outputObject(resume.generationNotes) ?? {},
+      createdAt: resume.createdAt,
+    })),
+    ...coverLettersNeedingReview.map((coverLetter) => ({
+      id: coverLetter.id,
+      applicationId: coverLetter.applications[0]?.id ?? null,
+      type: "Cover letter",
+      jobId: coverLetter.jobPostingId,
+      title: coverLetter.jobPosting.title,
+      company: coverLetter.jobPosting.company,
+      notes: outputObject(coverLetter.generationNotes) ?? {},
+      createdAt: coverLetter.createdAt,
+    })),
+  ]
+    .filter((item) => item.notes.applicationQa?.status === "NEEDS_REVIEW")
+    .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
+    .slice(0, 8);
+
+  return (
+    <AppShell>
+      <Stack spacing={3}>
+        <PageHeader
+          eyebrow="Agent review"
+          title="Agent Review Board"
+          description="Review the system's recommendations, warnings, evidence gaps, and generated-material QA before making application decisions."
+        />
+
+        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(4, 1fr)" }, gap: 2 }}>
+          <Metric icon={<InsightsOutlinedIcon />} label="Agent runs" value={runs.length.toString()} helper="Recent decisions logged" />
+          <Metric icon={<FactCheckOutlinedIcon />} label="Evidence review" value={evidenceNeedsReview.length.toString()} helper="Needs approval or rejection" />
+          <Metric icon={<AutoFixHighOutlinedIcon />} label="Job advice" value={jobEvaluations.length.toString()} helper="High-priority evaluations" />
+          <Metric icon={<ReportProblemOutlinedIcon />} label="Material QA" value={materialReviewItems.length.toString()} helper="Needs review" />
+        </Box>
+
+        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", xl: "1.25fr 1fr" }, gap: 2 }}>
+          <Stack spacing={2}>
+            <SectionTitle title="Daily Command Center" action={<ActionButton href="/dashboard" size="small" endIcon={<OpenInNewIcon />}>Open dashboard</ActionButton>} />
+            <Card>
+              <CardContent>
+                {latestDailyPlan ? (
+                  <Stack spacing={1.5}>
+                    <Typography color="text.secondary">{latestDailyPlan.summary ?? latestDailyPlan.rationale ?? "Latest daily plan is available."}</Typography>
+                    {(latestDailyPlan.actions ?? []).slice(0, 4).map((action, index) => (
+                      <Box key={`${action.title}-${index}`} sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.25 }}>
+                        <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between" }}>
+                          <Typography variant="body2" sx={{ fontWeight: 850 }}>{action.title}</Typography>
+                          <Chip size="small" variant="outlined" label={`P${action.priority}`} />
+                        </Stack>
+                        <Typography variant="caption" color="text.secondary">{action.detail}</Typography>
+                      </Box>
+                    ))}
+                  </Stack>
+                ) : (
+                  <EmptyState title="No daily plan yet" body="Generate a daily plan from the dashboard." />
+                )}
+              </CardContent>
+            </Card>
+
+            <SectionTitle title="Job Recommendations" action={<ActionButton href="/jobs" size="small" endIcon={<OpenInNewIcon />}>Review jobs</ActionButton>} />
+            <Card>
+              {jobEvaluations.length === 0 ? (
+                <EmptyState title="No job recommendations yet" body="Score the job queue to populate fit, opportunity, and confidence recommendations." />
+              ) : (
+                <Stack divider={<Box sx={{ borderTop: 1, borderColor: "divider" }} />}>
+                  {jobEvaluations.map((evaluation) => (
+                    <CardContent key={evaluation.id}>
+                      <Stack spacing={1.5}>
+                        <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} sx={{ justifyContent: "space-between" }}>
+                          <Box>
+                            <Typography variant="h3">{evaluation.jobPosting.title}</Typography>
+                            <Typography color="text.secondary">{evaluation.jobPosting.company} · {evaluation.jobSearchProfile.name}</Typography>
+                          </Box>
+                          <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", alignItems: "flex-start" }}>
+                            <ScoreChip score={evaluation.fitScore} label={`${evaluation.fitScore} fit`} />
+                            <ScoreChip score={evaluation.opportunityScore} label={`${evaluation.opportunityScore} opp`} />
+                            <ScoreChip score={evaluation.confidenceScore} label={`${evaluation.confidenceScore} conf`} />
+                          </Stack>
+                        </Stack>
+                        <Typography variant="body2" color="text.secondary">{evaluation.explanation}</Typography>
+                        <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+                          <Chip size="small" color={evaluation.recommendedAction === "APPLY_NOW" ? "success" : "warning"} variant="outlined" label={formatAction(evaluation.recommendedAction)} />
+                          {evaluation.recommendedResumeProfile ? <Chip size="small" variant="outlined" label={evaluation.recommendedResumeProfile} /> : null}
+                          {jsonArray(evaluation.strengths).slice(0, 4).map((signal) => <Chip key={`${evaluation.id}-${signal}`} size="small" variant="outlined" label={signal} />)}
+                        </Stack>
+                        <ActionButton href={`/jobs/${evaluation.jobPostingId}`} size="small" endIcon={<OpenInNewIcon />}>Open job</ActionButton>
+                      </Stack>
+                    </CardContent>
+                  ))}
+                </Stack>
+              )}
+            </Card>
+
+            <SectionTitle title="Generated Material QA" action={<ActionButton href="/resumes/generated" size="small" endIcon={<OpenInNewIcon />}>Review materials</ActionButton>} />
+            <Card>
+              {materialReviewItems.length === 0 ? (
+                <EmptyState title="No material QA warnings" body="Newly generated resumes and cover letters with QA issues will appear here." />
+              ) : (
+                <Stack divider={<Box sx={{ borderTop: 1, borderColor: "divider" }} />}>
+                  {materialReviewItems.map((item) => {
+                    const qa = item.notes.applicationQa;
+                    const issues = [...(qa?.warnings ?? []), ...(qa?.unsupportedClaims ?? []), ...(qa?.styleViolations ?? [])];
+                    return (
+                      <CardContent key={`${item.type}-${item.id}`}>
+                        <Stack spacing={1}>
+                          <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center" }}>
+                            <Chip size="small" color="warning" variant="outlined" label={item.type} />
+                            {typeof qa?.score === "number" ? <ScoreChip score={qa.score} /> : null}
+                            <Typography sx={{ fontWeight: 850 }}>{item.company}</Typography>
+                          </Stack>
+                          <Typography variant="body2" color="text.secondary">{item.title}</Typography>
+                          <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+                            {issues.slice(0, 4).map((issue) => <Chip key={`${item.id}-${issue}`} size="small" color="warning" variant="outlined" label={issue} />)}
+                          </Stack>
+                          <ActionButton href={item.applicationId ? `/applications/${item.applicationId}` : `/jobs/${item.jobId}`} size="small" endIcon={<OpenInNewIcon />}>
+                            {item.applicationId ? "Review packet" : "Open job"}
+                          </ActionButton>
+                        </Stack>
+                      </CardContent>
+                    );
+                  })}
+                </Stack>
+              )}
+            </Card>
+          </Stack>
+
+          <Stack spacing={2}>
+            <SectionTitle title="Evidence Needs Review" action={<ActionButton href="/evidence?confidence=NEEDS_REVIEW" size="small" endIcon={<OpenInNewIcon />}>Open evidence</ActionButton>} />
+            <Card>
+              {evidenceNeedsReview.length === 0 ? (
+                <EmptyState title="No evidence waiting" body="Candidate evidence marked needs review will appear here." />
+              ) : (
+                <Stack divider={<Box sx={{ borderTop: 1, borderColor: "divider" }} />}>
+                  {evidenceNeedsReview.map((evidence) => (
+                    <CardContent key={evidence.id}>
+                      <Stack spacing={1}>
+                        <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                          <StatusChip status={evidence.confidence} />
+                          <Chip size="small" variant="outlined" label={evidence.type} />
+                        </Stack>
+                        <Typography sx={{ fontWeight: 850 }}>{evidence.title}</Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 3, overflow: "hidden" }}>
+                          {evidence.content}
+                        </Typography>
+                      </Stack>
+                    </CardContent>
+                  ))}
+                </Stack>
+              )}
+            </Card>
+
+            <SectionTitle title="Profile Optimizer" action={<ActionButton href="/profiles" size="small" endIcon={<OpenInNewIcon />}>Open profiles</ActionButton>} />
+            <Card>
+              <CardContent>
+                <Stack spacing={1.5}>
+                  {latestProfileOutput ? (
+                    <>
+                      <Typography variant="body2" color="text.secondary">{latestProfileOutput.rationale ?? "Latest optimizer run is available."}</Typography>
+                      {(latestProfileOutput.recommendedChanges ?? []).slice(0, 5).map((change, index) => (
+                        <Box key={`${change.profileName}-${index}`} sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.25 }}>
+                          <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", alignItems: "center" }}>
+                            <Typography variant="body2" sx={{ fontWeight: 850 }}>{change.profileName ?? "Profile"}</Typography>
+                            <Chip size="small" variant="outlined" label={change.action ?? "review"} />
+                          </Stack>
+                          <Typography variant="caption" color="text.secondary">{change.summary}</Typography>
+                        </Box>
+                      ))}
+                    </>
+                  ) : (
+                    <EmptyState title="No optimizer run yet" body="Run the Search Profile Optimizer from the Profiles page." />
+                  )}
+                </Stack>
+              </CardContent>
+            </Card>
+          </Stack>
+        </Box>
+
+        <SectionTitle title="Recent Agent Runs" />
+        <TableContainer component={Card}>
+          <Table sx={{ minWidth: 960 }}>
+            <TableHead>
+              <TableRow>
+                <TableCell>Agent</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell>Confidence</TableCell>
+                <TableCell>Summary</TableCell>
+                <TableCell>Created</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {runs.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5}>
+                    <EmptyState title="No agent runs yet" body="Evidence, scoring, strategy, and QA agents will log runs here." />
+                  </TableCell>
+                </TableRow>
+              ) : (
+                runs.map((run) => {
+                  const output = outputObject(run.outputJson);
+                  return (
+                    <TableRow key={run.id} hover>
+                      <TableCell>
+                        <Typography sx={{ fontWeight: 850 }}>{formatAction(run.agentType)}</Typography>
+                        <Typography variant="caption" color="text.secondary">{run.user?.email ?? "System"}</Typography>
+                      </TableCell>
+                      <TableCell><StatusChip status={run.status} /></TableCell>
+                      <TableCell>
+                        {typeof output?.confidence === "number" ? <ScoreChip score={Math.round(output.confidence * 100)} /> : <Chip size="small" label="n/a" />}
+                      </TableCell>
+                      <TableCell sx={{ maxWidth: 520 }}>
+                        <Typography variant="body2" color="text.secondary" sx={{ display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 2, overflow: "hidden" }}>
+                          {agentSummary(output) || run.error || "No summary saved."}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>{run.createdAt.toLocaleString()}</TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Stack>
+    </AppShell>
+  );
+}
+
+function Metric({ icon, label, value, helper }: { icon: React.ReactNode; label: string; value: string; helper: string }) {
+  return (
+    <Card>
+      <CardContent>
+        <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
+          <Box sx={{ width: 40, height: 40, borderRadius: 1.5, bgcolor: "primary.light", color: "primary.dark", display: "grid", placeItems: "center" }}>
+            {icon}
+          </Box>
+          <Box>
+            <Typography variant="body2" color="text.secondary">{label}</Typography>
+            <Typography variant="h2" sx={{ fontVariantNumeric: "tabular-nums" }}>{value}</Typography>
+            <Typography variant="caption" color="text.secondary">{helper}</Typography>
+          </Box>
+        </Stack>
+      </CardContent>
+    </Card>
+  );
+}
+
+function SectionTitle({ title, action }: { title: string; action?: React.ReactNode }) {
+  return (
+    <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", alignItems: "center" }}>
+      <Typography variant="h3">{title}</Typography>
+      {action}
+    </Stack>
+  );
+}
+
+function outputObject(value: unknown): AgentOutput | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as AgentOutput : null;
+}
+
+function agentSummary(output: AgentOutput | null) {
+  if (!output) return "";
+  return output.reasoningSummary ?? output.rationale ?? output.applicationQa?.warnings?.[0] ?? output.resumeStrategy?.positioningSummary ?? "";
+}
+
+function formatAction(action: string) {
+  return action
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}

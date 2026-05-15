@@ -73,21 +73,105 @@ export async function backfillCandidateEvidence(candidateProfileId?: string) {
     }
 
     for (const upload of profile.resumeUploads) {
-      results.push(await upsertEvidence({
-        candidateProfileId: profile.id,
-        type: "EXPERIENCE",
-        title: `Approved resume: ${upload.fileName}`,
-        content: upload.extractedText.slice(0, 4000),
-        sourceType: "RESUME_UPLOAD",
-        sourceRef: upload.id,
-        confidence: "VERIFIED",
-        tags: inferEvidenceTags(upload.extractedText),
-        metadata: { resumeUploadId: upload.id, fileName: upload.fileName } as Prisma.InputJsonValue,
-      }));
+      const resumeChunks = createResumeEvidenceChunks(upload.extractedText, upload.fileName);
+      for (const chunk of resumeChunks) {
+        results.push(await upsertEvidence({
+          candidateProfileId: profile.id,
+          type: chunk.type,
+          title: chunk.title,
+          content: chunk.content,
+          sourceType: "RESUME_UPLOAD",
+          sourceRef: `${upload.id}:chunk:${chunk.index}`,
+          confidence: "VERIFIED",
+          tags: inferEvidenceTags(chunk.title, chunk.content),
+          metadata: {
+            resumeUploadId: upload.id,
+            fileName: upload.fileName,
+            chunkIndex: chunk.index,
+            chunkedResumeEvidence: true,
+          } as Prisma.InputJsonValue,
+        }));
+      }
     }
   }
 
   return results;
+}
+
+export function createResumeEvidenceChunks(extractedText: string, fileName: string) {
+  const normalized = extractedText
+    .replace(/\r/g, "\n")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  if (!normalized) return [];
+
+  const lines = normalized.split("\n").map((line) => line.trim()).filter(Boolean);
+  const sections: Array<{ heading: string; lines: string[] }> = [];
+  let current: { heading: string; lines: string[] } = { heading: "Resume summary", lines: [] };
+
+  for (const line of lines) {
+    if (isResumeSectionHeading(line) && current.lines.length) {
+      sections.push(current);
+      current = { heading: line, lines: [] };
+    } else if (isResumeSectionHeading(line)) {
+      current.heading = line;
+    } else {
+      current.lines.push(line);
+    }
+  }
+  if (current.lines.length) sections.push(current);
+
+  const chunks: Array<{ index: number; type: CandidateEvidenceType; title: string; content: string }> = [];
+  for (const section of sections) {
+    const sectionText = section.lines.join(" ");
+    const pieces = splitResumeSection(sectionText);
+    for (const piece of pieces) {
+      chunks.push({
+        index: chunks.length,
+        type: sectionType(section.heading),
+        title: `Resume evidence: ${section.heading} (${fileName})`,
+        content: piece,
+      });
+    }
+  }
+
+  return chunks.slice(0, 32);
+}
+
+function isResumeSectionHeading(line: string) {
+  const normalized = line.trim();
+  if (normalized.length < 3 || normalized.length > 48) return false;
+  return /^(summary|profile|experience|work experience|professional experience|projects|selected projects|skills|technical skills|education|certifications|achievements)$/i.test(normalized)
+    || (/^[A-Z][A-Z\s/&-]+$/.test(normalized) && normalized.split(/\s+/).length <= 4);
+}
+
+function splitResumeSection(text: string) {
+  const maxLength = 1100;
+  const sentences = text.split(/(?<=[.!?])\s+/).map((sentence) => sentence.trim()).filter(Boolean);
+  if (!sentences.length) return text.length > maxLength ? [text.slice(0, maxLength)] : [text];
+
+  const pieces: string[] = [];
+  let current = "";
+  for (const sentence of sentences) {
+    if (current.length && `${current} ${sentence}`.length > maxLength) {
+      pieces.push(current);
+      current = sentence;
+    } else {
+      current = current ? `${current} ${sentence}` : sentence;
+    }
+  }
+  if (current) pieces.push(current);
+  return pieces.map((piece) => piece.slice(0, maxLength));
+}
+
+function sectionType(heading: string): CandidateEvidenceType {
+  if (/project/i.test(heading)) return "PROJECT";
+  if (/skill/i.test(heading)) return "SKILL";
+  if (/education/i.test(heading)) return "EDUCATION";
+  if (/certification/i.test(heading)) return "CERTIFICATION";
+  if (/achievement/i.test(heading)) return "ACHIEVEMENT";
+  return "EXPERIENCE";
 }
 
 export async function upsertEvidence(draft: EvidenceDraft) {

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import NotificationsActiveOutlinedIcon from "@mui/icons-material/NotificationsActiveOutlined";
 import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import GitHubIcon from "@mui/icons-material/GitHub";
@@ -289,6 +290,9 @@ export function SettingsClient({ initialSettings, aiSettings, sourceSettings, pr
             <Typography variant="body2" color="text.secondary">
               This is a source list, not a claim that every company is currently hiring. The app checks careers/ATS feeds and then scores matching roles against your profiles.
             </Typography>
+            <Button component={Link} href="/sources" variant="outlined" sx={{ alignSelf: "flex-start" }}>
+              Manage company sources
+            </Button>
           </Stack>
         </CardContent>
       </Card>

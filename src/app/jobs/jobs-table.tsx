@@ -35,7 +35,9 @@ export type JobsTableMatch = {
   id: string;
   jobId: string;
   opportunityScore: number | null;
+  duplicateGroupId: string | null;
   score: number;
+  staleScore: number;
   title: string;
   company: string;
   location: string;
@@ -280,6 +282,10 @@ export function JobsTable({ matches, statusView }: { matches: JobsTableMatch[]; 
                         <Typography variant="body2" color="text.secondary">
                           {match.company} · {match.location}
                         </Typography>
+                        <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mt: 0.75 }}>
+                          {match.duplicateGroupId ? <Chip size="small" color="warning" variant="outlined" label="Duplicate group" /> : null}
+                          {match.staleScore >= 45 ? <Chip size="small" color="warning" variant="outlined" label={`Stale ${match.staleScore}`} /> : null}
+                        </Stack>
                       </TableCell>
                       <TableCell><StatusChip status={match.status} /></TableCell>
                       <TableCell>
@@ -391,6 +397,8 @@ function SwipeJobCard({ match, onAction }: { match: JobsTableMatch; onAction: (m
               <Chip size="small" variant="outlined" label={match.profileName} />
               {match.opportunityScore === null ? null : <Chip size="small" variant="outlined" label={`Opportunity ${match.opportunityScore}`} />}
               {match.action ? <Chip size="small" color="primary" variant="outlined" label={formatAction(match.action)} /> : null}
+              {match.duplicateGroupId ? <Chip size="small" color="warning" variant="outlined" label="Duplicate group" /> : null}
+              {match.staleScore >= 45 ? <Chip size="small" color="warning" variant="outlined" label={`Stale ${match.staleScore}`} /> : null}
             </Stack>
 
             <Box>
