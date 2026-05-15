@@ -29,7 +29,7 @@ export default async function NetworkingPage() {
       take: 80,
     }),
     prisma.contact.findMany({
-      orderBy: [{ company: "asc" }, { updatedAt: "desc" }],
+      orderBy: [{ relevanceScore: "desc" }, { company: "asc" }, { updatedAt: "desc" }],
       take: 80,
     }),
     prisma.agentRun.findFirst({
@@ -107,6 +107,8 @@ export default async function NetworkingPage() {
                       <Typography sx={{ fontWeight: 800 }}>{contact.name}</Typography>
                       <Typography variant="body2" color="text.secondary">{contact.company}{contact.title ? ` · ${contact.title}` : ""}</Typography>
                       <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mt: 0.75 }}>
+                        {contact.relevanceScore > 0 ? <Chip size="small" color="primary" variant="outlined" label={`${contact.relevanceScore}% relevant`} /> : null}
+                        {contact.source ? <Chip size="small" variant="outlined" label={contact.source} /> : null}
                         {contact.email ? <Chip size="small" variant="outlined" label={contact.email} /> : null}
                         {contact.linkedinUrl ? <ActionButton href={contact.linkedinUrl} size="small" endIcon={<OpenInNewIcon />}>LinkedIn</ActionButton> : null}
                       </Stack>

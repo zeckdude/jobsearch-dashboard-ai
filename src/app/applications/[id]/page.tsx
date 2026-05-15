@@ -35,6 +35,7 @@ import { CompensationOpportunityButton } from "./compensation-opportunity-button
 import { OutcomeForm } from "./outcome-form";
 import { PortfolioMatchButton } from "./portfolio-match-button";
 import { RecruiterOutreachButton } from "./recruiter-outreach-button";
+import { SelectPacketAnswerOptionButton } from "./select-packet-answer-option-button";
 import { MarkAppliedButton } from "../mark-applied-button";
 
 export const dynamic = "force-dynamic";
@@ -353,15 +354,37 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
                         </Stack>
                         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", xl: "repeat(3, 1fr)" }, gap: 1.5 }}>
                           {entry.options.map((option, optionIndex) => (
-                            <Box key={`${entry.question}-${option.title}-${optionIndex}`} sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.5 }}>
+                            <Box
+                              key={`${entry.question}-${option.title}-${optionIndex}`}
+                              sx={{
+                                border: 1,
+                                borderColor: entry.selectedOptionIndex === optionIndex ? "success.main" : "divider",
+                                borderRadius: 1,
+                                p: 1.5,
+                                bgcolor: entry.selectedOptionIndex === optionIndex ? "rgba(46, 125, 50, 0.08)" : "transparent",
+                              }}
+                            >
                               <Stack spacing={1}>
                                 <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", alignItems: "center" }}>
                                   <Typography sx={{ fontWeight: 850 }}>{option.title}</Typography>
-                                  <Chip size="small" variant="outlined" label={`Option ${optionIndex + 1}`} />
+                                  <Stack direction="row" spacing={0.75} sx={{ alignItems: "center" }}>
+                                    {entry.selectedOptionIndex === optionIndex ? <Chip size="small" color="success" label="Selected" /> : null}
+                                    <Chip size="small" variant="outlined" label={`Option ${optionIndex + 1}`} />
+                                  </Stack>
                                 </Stack>
                                 <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", lineHeight: 1.65 }}>{option.answer}</Typography>
                                 <SignalSection title="Evidence" items={option.evidence ?? []} color="primary" />
                                 <SignalSection title="Cautions" items={option.cautions ?? []} color="warning" />
+                                {entry.id ? (
+                                  <Box>
+                                    <SelectPacketAnswerOptionButton
+                                      applicationId={application.id}
+                                      answerId={entry.id}
+                                      optionIndex={optionIndex}
+                                      selected={entry.selectedOptionIndex === optionIndex}
+                                    />
+                                  </Box>
+                                ) : null}
                               </Stack>
                             </Box>
                           ))}

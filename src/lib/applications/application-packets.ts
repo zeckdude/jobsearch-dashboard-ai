@@ -5,6 +5,22 @@ import { prisma } from "@/lib/prisma";
 
 type PacketMaterialData = Omit<Prisma.ApplicationPacketUncheckedCreateInput, "id" | "userId" | "applicationId" | "jobPostingId" | "createdAt" | "updatedAt">;
 
+export type ApplicationAnswerEntry = {
+  id?: string;
+  question: string;
+  generatedBy?: string;
+  options: Array<{
+    title: string;
+    answer: string;
+    evidence: string[];
+    tone: string;
+    cautions: string[];
+  }>;
+  selectedOptionIndex?: number;
+  selectedAt?: string;
+  createdAt?: string;
+};
+
 export async function syncApplicationPacket(applicationId: string) {
   const application = await prisma.application.findUnique({
     where: { id: applicationId },
@@ -169,6 +185,42 @@ export async function deleteApplicationPacketAnswer(applicationId: string, answe
   };
 }
 
+export async function selectApplicationPacketAnswerOption(applicationId: string, answerId: string, optionIndex: number) {
+  const packet = await prisma.applicationPacket.findUnique({
+    where: { applicationId },
+    select: { applicationAnswersJson: true },
+  });
+  if (!packet) throw new Error("Application packet not found.");
+
+  const current = applicationAnswerEntries(packet.applicationAnswersJson);
+  const answer = current.find((entry) => entry.id === answerId);
+  if (!answer) throw new Error("Saved application answer not found.");
+  if (!Number.isInteger(optionIndex) || optionIndex < 0 || optionIndex >= answer.options.length) {
+    throw new Error("Selected answer option is out of range.");
+  }
+
+  const next = current.map((entry) =>
+    entry.id === answerId
+      ? { ...entry, selectedOptionIndex: optionIndex, selectedAt: new Date().toISOString() }
+      : entry,
+  );
+
+  await prisma.applicationPacket.update({
+    where: { applicationId },
+    data: {
+      applicationAnswersJson: next as Prisma.InputJsonValue,
+    },
+  });
+
+  return {
+    selected: true,
+    answerCount: next.length,
+    selectedOptionIndex: optionIndex,
+    message: "Application answer option selected.",
+  };
+}
+
+
 export async function backfillApplicationPackets(limit = 200) {
   const applications = await prisma.application.findMany({
     select: { id: true },
@@ -305,23 +357,36 @@ export function packetApprovalChecklist(packet: Pick<ApplicationPacket, "status"
 
 export function applicationAnswerEntries(value: unknown) {
   if (!Array.isArray(value)) return [];
-  return value.filter((item): item is {
-    id?: string;
-    question: string;
-    generatedBy?: string;
-    options: Array<{
-      title: string;
-      answer: string;
-      evidence: string[];
-      tone: string;
-      cautions: string[];
-    }>;
-    createdAt?: string;
-  } => {
+  return value.filter((item): item is ApplicationAnswerEntry => {
     if (!item || typeof item !== "object") return false;
     const entry = item as Record<string, unknown>;
     return typeof entry.question === "string" && Array.isArray(entry.options);
   });
+}
+
+export function selectedApplicationAnswers(value: unknown) {
+  return applicationAnswerEntries(value)
+    .map((entry) => {
+      const optionIndex = typeof entry.selectedOptionIndex === "number" ? entry.selectedOptionIndex : -1;
+      const option = optionIndex >= 0 ? entry.options[optionIndex] : null;
+      if (!option) return null;
+      return {
+        question: entry.question,
+        answer: option.answer,
+        title: option.title,
+        evidence: option.evidence ?? [],
+        cautions: option.cautions ?? [],
+        selectedAt: entry.selectedAt ?? null,
+      };
+    })
+    .filter((item): item is {
+      question: string;
+      answer: string;
+      title: string;
+      evidence: string[];
+      cautions: string[];
+      selectedAt: string | null;
+    } => Boolean(item));
 }
 
 async function findResumeProfileForApplication(application: {

@@ -143,6 +143,8 @@ def main() -> int:
     cover_letter_pdf = download_file(package["materials"]["coverLetterPdfUrl"], workdir / f"{base_filename} - Cover Letter.pdf")
     cover_letter_text = workdir / f"{base_filename} - Cover Letter.txt"
     cover_letter_text.write_text(package["materials"]["coverLetterBody"], encoding="utf-8")
+    selected_answers = package.get("materials", {}).get("selectedApplicationAnswers", [])
+    selected_answers_text = write_selected_answers_file(selected_answers, workdir / f"{base_filename} - Application Answers.txt")
     (workdir / "assistant-package.json").write_text(json.dumps(package, indent=2), encoding="utf-8")
 
     print("Prepared local materials:")
@@ -150,6 +152,8 @@ def main() -> int:
     print(f"- Cover letter PDF: {cover_letter_pdf}")
     print(f"- Cover letter text: {cover_letter_text}")
     print(f"- Job: {package['job']['company']} - {package['job']['title']}")
+    if selected_answers_text:
+        print(f"- Selected application answers: {selected_answers_text}")
     print()
     print("Safety checkpoint: this assistant will stop before submit.")
 
@@ -221,6 +225,8 @@ def main() -> int:
             print("This is often a job listing page, login page, or intermediary board rather than the final application form.")
         print("Review every field in the browser. Submit manually only if everything is correct.")
         print("Sensitive demographic, work authorization, salary, and custom questions were intentionally left untouched.")
+        if selected_answers_text:
+            print(f"Use selected custom-answer drafts from: {selected_answers_text}")
         keep_open(args, browser_or_context, package["job"]["applicationUrl"], workdir)
 
     return 0
@@ -295,6 +301,27 @@ def fetch_json(url: str) -> dict[str, Any]:
 def download_file(url: str, path: Path) -> Path:
     with urllib.request.urlopen(url) as response:
         path.write_bytes(response.read())
+    return path
+
+
+def write_selected_answers_file(selected_answers: list[dict[str, Any]], path: Path) -> Path | None:
+    if not selected_answers:
+        return None
+    sections: list[str] = []
+    for index, item in enumerate(selected_answers, start=1):
+        question = str(item.get("question") or "").strip()
+        answer = str(item.get("answer") or "").strip()
+        title = str(item.get("title") or f"Answer {index}").strip()
+        cautions = [str(caution).strip() for caution in item.get("cautions", []) if str(caution).strip()]
+        section = [f"{index}. {title}"]
+        if question:
+            section.extend(["", f"Question: {question}"])
+        if answer:
+            section.extend(["", answer])
+        if cautions:
+            section.extend(["", "Cautions:", *[f"- {caution}" for caution in cautions]])
+        sections.append("\n".join(section))
+    path.write_text("\n\n---\n\n".join(sections), encoding="utf-8")
     return path
 
 

@@ -829,12 +829,16 @@ model Contact {
   title             String?
   email             String?
   linkedinUrl       String?
+  source            String?
+  relevanceScore    Int                 @default(0)
   notes             String?
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
   applications      Application[]
   recruiterOutreach RecruiterOutreach[]
   user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, relevanceScore])
 }
 
 model RecruiterOutreach {

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { apiError } from "@/lib/api";
+import { selectedApplicationAnswers } from "@/lib/applications/application-packets";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -43,6 +44,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
     const profile = application.user.profile;
     const fullName = profile?.fullName ?? application.user.name ?? "";
     const [firstName, ...lastNameParts] = fullName.split(/\s+/).filter(Boolean);
+    const packet = application.applicationPackets[0];
 
     return NextResponse.json({
       safety: {
@@ -59,7 +61,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
         id: application.id,
         status: application.status,
         notes: application.notes,
-        packetId: application.applicationPackets[0]?.id ?? null,
+        packetId: packet?.id ?? null,
       },
       job: {
         id: application.jobPosting.id,
@@ -91,6 +93,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
         coverLetterId: application.coverLetter.id,
         coverLetterPdfUrl: `${origin}/api/cover-letters/${application.coverLetter.id}/pdf`,
         coverLetterBody: application.coverLetter.body,
+        selectedApplicationAnswers: selectedApplicationAnswers(packet?.applicationAnswersJson),
       },
     });
   } catch (error) {

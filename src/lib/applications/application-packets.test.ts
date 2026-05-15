@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applicationAnswerEntries, backfillApplicationPackets, buildApplicationPacketData, packetApprovalChecklist, packetApprovalState } from "@/lib/applications/application-packets";
+import { applicationAnswerEntries, backfillApplicationPackets, buildApplicationPacketData, packetApprovalChecklist, packetApprovalState, selectApplicationPacketAnswerOption, selectedApplicationAnswers } from "@/lib/applications/application-packets";
 
 describe("application packet aggregate", () => {
   it("stores generated resume, cover letter, QA, and evidence refs as a draft packet", () => {
@@ -125,13 +125,47 @@ describe("application packet aggregate", () => {
 
   it("reads saved application answer entries defensively", () => {
     const entries = applicationAnswerEntries([
-      { question: "Why this role?", options: [{ title: "Direct", answer: "Because it fits.", evidence: [], tone: "brief", cautions: [] }] },
+      { question: "Why this role?", selectedOptionIndex: 0, options: [{ title: "Direct", answer: "Because it fits.", evidence: [], tone: "brief", cautions: [] }] },
       { question: 42, options: [] },
       null,
     ]);
 
     expect(entries).toHaveLength(1);
     expect(entries[0]?.question).toBe("Why this role?");
+    expect(entries[0]?.selectedOptionIndex).toBe(0);
+  });
+
+  it("exports selection helper for saved answer options", () => {
+    expect(typeof selectApplicationPacketAnswerOption).toBe("function");
+  });
+
+  it("returns only selected application answers for the assistant package", () => {
+    const selected = selectedApplicationAnswers([
+      {
+        question: "How did you find this role?",
+        selectedOptionIndex: 1,
+        selectedAt: "2026-01-01T00:00:00.000Z",
+        options: [
+          { title: "A", answer: "First", evidence: [], tone: "brief", cautions: [] },
+          { title: "B", answer: "Selected answer", evidence: ["source"], tone: "direct", cautions: ["review"] },
+        ],
+      },
+      {
+        question: "Unselected",
+        options: [{ title: "C", answer: "Ignored", evidence: [], tone: "brief", cautions: [] }],
+      },
+    ]);
+
+    expect(selected).toEqual([
+      {
+        question: "How did you find this role?",
+        title: "B",
+        answer: "Selected answer",
+        evidence: ["source"],
+        cautions: ["review"],
+        selectedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
   });
 
   it("exports a backfill function for existing applications", () => {

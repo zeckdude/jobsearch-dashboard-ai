@@ -37,7 +37,13 @@ Run the full local Docker stack instead:
 docker compose --profile full up --build
 ```
 
-That starts Postgres with pgvector, Redis, the Next.js app on `http://localhost:3000`, and an embeddings worker. To run only the containerized app without the worker:
+That starts Postgres with pgvector, Redis, the Next.js app on `http://localhost:3000`, runs deployed migrations in the app and worker containers, and starts an embeddings worker. On a brand-new Docker database, seed the app once from another terminal:
+
+```bash
+docker compose --profile full exec app npm run prisma:seed
+```
+
+To run only the containerized app without the worker:
 
 ```bash
 docker compose --profile app up --build app
@@ -47,6 +53,14 @@ To run only the embeddings worker:
 
 ```bash
 docker compose --profile worker up --build worker
+```
+
+Smoke test the main UI pages against a running local or Docker app:
+
+```bash
+npm run smoke:pages
+# or
+SMOKE_BASE_URL=http://localhost:3000 npm run smoke:pages
 ```
 
 ## Optional Providers
@@ -99,6 +113,7 @@ The assistant will:
 - open the job application URL in a local Chromium window
 - fill safe fields such as name, email, phone, location, LinkedIn, GitHub, and portfolio
 - upload the generated resume PDF and cover letter text file when matching upload controls exist
+- prepare selected application-question answers as a local text file when you have chosen an answer option in the packet review page
 - highlight likely submit buttons and wait for your manual review
 
 The assistant will not:
@@ -108,6 +123,23 @@ The assistant will not:
 - use stealth browser settings
 - rotate proxies
 - answer sensitive demographic questions automatically
+
+Application-question workflow:
+
+1. Open `Apply Sprint`.
+2. Select the ready application.
+3. Paste a written employer prompt into `Application question helper`.
+4. Generate grounded answer options.
+5. Open the application packet, review the saved options, and click `Use this` on the answer you want.
+6. Launch the assistant.
+
+Selected answers are added to `assistant-package.json` and written next to the generated resume and cover letter as:
+
+```txt
+<Candidate> - <Company> - <Role> - Application Answers.txt
+```
+
+The assistant still leaves custom question fields untouched. Copy selected answers manually during the final browser review.
 
 Some job boards require Google OAuth, human verification, or paid apply flows. Those sources are disabled by default or treated as manual-only: the assistant opens the job in your normal browser and reveals the prepared materials folder instead of trying to automate the login.
 
@@ -172,6 +204,7 @@ npm run db:up
 npm run db:logs
 npm run db:down
 npm run db:reset
+npm run smoke:pages
 ```
 
 ## Evidence Worker

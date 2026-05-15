@@ -1,4 +1,4 @@
-import type { CandidateEvidenceType, EvidenceConfidence } from "@prisma/client";
+import type { CandidateEvidenceSourceType, CandidateEvidenceType, EvidenceConfidence } from "@prisma/client";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
@@ -22,15 +22,18 @@ export const dynamic = "force-dynamic";
 
 type EvidencePageSearchParams = {
   confidence?: string;
+  source?: string;
   type?: string;
 };
 
 export default async function EvidencePage({ searchParams }: { searchParams?: EvidencePageSearchParams }) {
   const confidence = normalizeConfidence(searchParams?.confidence);
+  const sourceType = normalizeSourceType(searchParams?.source);
   const type = normalizeType(searchParams?.type);
   const evidence = await prisma.candidateEvidence.findMany({
     where: {
       ...(confidence ? { confidence } : {}),
+      ...(sourceType ? { sourceType } : {}),
       ...(type ? { type } : {}),
     },
     include: {
@@ -71,6 +74,12 @@ export default async function EvidencePage({ searchParams }: { searchParams?: Ev
               <TextField select name="type" label="Type" defaultValue={type ?? ""} sx={{ minWidth: 220 }}>
                 <MenuItem value="">All types</MenuItem>
                 {["EXPERIENCE", "PROJECT", "ACHIEVEMENT", "SKILL", "METRIC", "EDUCATION", "CERTIFICATION", "PREFERENCE", "WRITING_STYLE"].map((item) => (
+                  <MenuItem key={item} value={item}>{formatLabel(item)}</MenuItem>
+                ))}
+              </TextField>
+              <TextField select name="source" label="Source" defaultValue={sourceType ?? ""} sx={{ minWidth: 240 }}>
+                <MenuItem value="">All sources</MenuItem>
+                {["RESUME_UPLOAD", "USER_INPUT", "GITHUB_REPO", "LINKEDIN", "APPLICATION_HISTORY", "INTERVIEW_NOTE", "GENERATED_BUT_APPROVED"].map((item) => (
                   <MenuItem key={item} value={item}>{formatLabel(item)}</MenuItem>
                 ))}
               </TextField>
@@ -131,6 +140,10 @@ export default async function EvidencePage({ searchParams }: { searchParams?: Ev
 
 function normalizeConfidence(value?: string): EvidenceConfidence | undefined {
   return value === "VERIFIED" || value === "INFERRED" || value === "NEEDS_REVIEW" || value === "REJECTED" ? value : undefined;
+}
+
+function normalizeSourceType(value?: string): CandidateEvidenceSourceType | undefined {
+  return ["RESUME_UPLOAD", "USER_INPUT", "GITHUB_REPO", "LINKEDIN", "APPLICATION_HISTORY", "INTERVIEW_NOTE", "GENERATED_BUT_APPROVED"].includes(value ?? "") ? value as CandidateEvidenceSourceType : undefined;
 }
 
 function normalizeType(value?: string): CandidateEvidenceType | undefined {

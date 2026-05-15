@@ -189,7 +189,7 @@ function decodeHtmlEntities(value: string) {
 
 function decodeHtmlEntitiesDeep(value: string) {
   let current = value;
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 4; i += 1) {
     const next = decodeHtmlEntities(current);
     if (next === current) break;
     current = next;

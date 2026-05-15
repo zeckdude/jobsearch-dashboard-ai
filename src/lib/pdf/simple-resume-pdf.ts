@@ -327,7 +327,7 @@ export function createSimpleTextPdf(text: string, presetName: PdfPreset = "ateli
 
   const { content: headerContent, annotations: headerAnnotations } = renderHeader(name, contactLine, p);
 
-  for (let pg = 0; pg < pages.length; pg++) {
+  for (let pg = 0; pg < pages.length; pg += 1) {
     const pageObjId = objects.length + 1;
     const contentObjId = pageObjId + 1;
     const pageAnnotations = pg === 0 ? headerAnnotations : [];
@@ -385,7 +385,7 @@ function preprocess(text: string): Preprocessed {
   const contactParts: string[] = [];
   let bodyStart = nameIdx + 1;
 
-  for (let j = nameIdx + 1; j < Math.min(nameIdx + 6, lines.length); j++) {
+  for (let j = nameIdx + 1; j < Math.min(nameIdx + 6, lines.length); j += 1) {
     const trimmed = lines[j].trim();
     if (!trimmed) { bodyStart = j + 1; continue; }
     if (/@|https?:\/\/|\|/.test(trimmed)) {
@@ -558,7 +558,7 @@ function renderHeader(
     cmds.push(`/F1 ${p.contactSize} Tf`);
     cmds.push("0 Tc");
     let x = startX;
-    for (let i = 0; i < parts.length; i++) {
+    for (let i = 0; i < parts.length; i += 1) {
       if (i > 0) {
         cmds.push(`1 0 0 1 ${x.toFixed(2)} ${contactY} Tm`);
         cmds.push(`(${escapePdfText(sep)}) Tj`);
@@ -583,7 +583,7 @@ function renderHeader(
 
   if (rightParts.length > 0) {
     let totalW = 0;
-    for (let i = 0; i < rightParts.length; i++) {
+    for (let i = 0; i < rightParts.length; i += 1) {
       if (i > 0) totalW += textWidth(sep, p.contactSize);
       totalW += textWidth(rightParts[i], p.contactSize);
     }
