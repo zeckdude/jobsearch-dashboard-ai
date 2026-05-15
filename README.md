@@ -1,4 +1,4 @@
-# Job Search OS
+# Agentic Jobs Search Assistant
 
 Personal AI-powered job search dashboard for reviewing jobs, maintaining search profiles, parsing resumes, and generating truthful ATS-friendly application materials.
 
