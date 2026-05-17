@@ -154,9 +154,10 @@ Implementation notes:
 
 1. User records outcomes or email sync detects them.
 2. Application reconciliation syncs canonical duplicate trackers so submitted jobs win over stale approved/ready duplicates.
-3. Outcome Learning reviews patterns across profiles, sources, industries, and materials.
-4. It distinguishes low sample size from meaningful trends.
-5. The app surfaces actionable strategy changes.
+3. Application integrity repair catches mechanical drift across trackers, job matches, email confirmations, submitted assistant runs, and resurfaced active matches.
+4. Outcome Learning reviews patterns across profiles, sources, industries, and materials.
+5. It distinguishes low sample size from meaningful trends.
+6. The app surfaces actionable strategy changes.
 
 ## Hands-Off Principle
 

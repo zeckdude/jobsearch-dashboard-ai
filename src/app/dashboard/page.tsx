@@ -22,6 +22,7 @@ import { SearchRunCommandCenter } from "@/components/search-run-command-center";
 import { ScoreChip } from "@/components/ui/score-chip";
 import { formatStatus } from "@/components/ui/status-chip";
 import { agentUserRequestHref, agentUserRequestTypeLabel, listOpenAgentUserRequests } from "@/lib/agent-user-requests";
+import { auditApplicationIntegrity } from "@/lib/applications/integrity";
 import { applicationJobKeySet, hasApplicationForJob, submittedApplicationStatuses } from "@/lib/applications/job-filters";
 import { jsonArray } from "@/lib/json";
 import { uniqueMatchesByCanonicalJob } from "@/lib/job-search/unique-matches";
@@ -48,7 +49,7 @@ type DailyPlanOutput = {
 };
 
 export default async function DashboardPage() {
-  const [profiles, latestRun, applicationStatusCounts, readyApplicationCount, approvedApplicationCount, needsReview, trackedApplicationsForAgency, agencyCandidateMatches, latestDailyPlanRun, agentUserRequests] = await Promise.all([
+  const [profiles, latestRun, applicationStatusCounts, readyApplicationCount, approvedApplicationCount, needsReview, trackedApplicationsForAgency, agencyCandidateMatches, latestDailyPlanRun, agentUserRequests, integrityReport] = await Promise.all([
     prisma.jobSearchProfile.findMany({ where: { enabled: true }, orderBy: { name: "asc" } }),
     prisma.jobSearchRun.findFirst({ orderBy: { startedAt: "desc" } }),
     prisma.application.groupBy({ by: ["status"], _count: { status: true } }),
@@ -102,6 +103,7 @@ export default async function DashboardPage() {
       orderBy: { createdAt: "desc" },
     }),
     listOpenAgentUserRequests(5),
+    auditApplicationIntegrity().catch(() => null),
   ]);
   const suppressionStates = await loadJobSuppressionStatesByUserIds([
     ...needsReview.map((match) => match.jobSearchProfile.userId),
@@ -303,6 +305,44 @@ export default async function DashboardPage() {
                             </Box>
                           );
                         })}
+                      </Stack>
+                    ) : null}
+                  </Stack>
+                </CardContent>
+              </Card>
+
+              <Card sx={{ borderColor: integrityReport?.totalIssues ? "warning.main" : "success.main" }}>
+                <CardContent>
+                  <Stack spacing={2}>
+                    <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ justifyContent: "space-between", alignItems: { sm: "center" } }}>
+                      <Box>
+                        <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 1 }}>
+                          <Chip size="small" color={integrityReport?.totalIssues ? "warning" : "success"} label={integrityReport?.totalIssues ? "Drift detected" : "Synced"} />
+                          <Chip size="small" variant="outlined" label={`${integrityReport?.totalIssues ?? 0} issues`} />
+                        </Stack>
+                        <Typography variant="h3">State integrity</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          Canonical application, match, email, and assistant state.
+                        </Typography>
+                      </Box>
+                      <ActionButton
+                        postTo="/api/applications/integrity/repair"
+                        variant={integrityReport?.totalIssues ? "contained" : "outlined"}
+                        color={integrityReport?.totalIssues ? "warning" : "success"}
+                        size="small"
+                        loadingLabel="Repairing..."
+                      >
+                        Repair
+                      </ActionButton>
+                    </Stack>
+                    {integrityReport?.issues.length ? (
+                      <Stack spacing={1}>
+                        {integrityReport.issues.slice(0, 3).map((issue) => (
+                          <Box key={`${issue.kind}-${issue.applicationId ?? issue.jobProfileMatchId ?? issue.jobPostingId}`} sx={{ borderTop: 1, borderColor: "divider", pt: 1 }}>
+                            <Typography variant="body2" sx={{ fontWeight: 800, overflowWrap: "anywhere" }}>{issue.title}</Typography>
+                            <Typography variant="caption" color="text.secondary">{issue.detail}</Typography>
+                          </Box>
+                        ))}
                       </Stack>
                     ) : null}
                   </Stack>
