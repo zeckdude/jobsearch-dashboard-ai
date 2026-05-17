@@ -129,7 +129,7 @@ Implementation notes:
 
 ## Recruiting Agency Workflow
 
-The recruiting agency workflow combines LangGraph orchestration with existing deterministic candidate filtering, duplicate suppression, and packet preparation skills. Search runs can start this workflow automatically after saving new eligible 90+ matches, unless another agency run is already pending or running.
+The recruiting agency workflow combines LangGraph orchestration with existing deterministic candidate filtering, duplicate suppression, and packet preparation skills. Search runs can start this workflow automatically when eligible 90+ matches exist, unless another agency run is already pending or running. The search run records structured handoff metadata so the Dashboard can show the linked agency run, live events, totals, skip reasons, and repair/retry controls.
 
 1. User, cron, or search auto-handoff starts the recruiting agency.
 2. LangGraph creates a durable `AgentRun` thread and loads the approval policy.

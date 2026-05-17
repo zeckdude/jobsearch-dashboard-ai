@@ -142,7 +142,7 @@ export function BulkPrepareControl({ compact = false, defaultMinimumScore = 85, 
           <CardContent>
             <Stack spacing={1.5}>
               <Box>
-                <Typography variant="h3">Auto-prepare top matches</Typography>
+                <Typography variant="h3">Prepare approved packets</Typography>
                 <Typography variant="body2" color="text.secondary">
                   Generate custom resumes and cover letters for already-approved jobs. Search results must pass agency approval before preparation.
                 </Typography>

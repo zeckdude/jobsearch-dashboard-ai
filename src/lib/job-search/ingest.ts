@@ -14,6 +14,25 @@ type ProgressEvent = {
   at: string;
   message: string;
   stats?: Record<string, number>;
+  agencyHandoff?: AgencyHandoffProgress;
+};
+
+type AgencyHandoffProgress = {
+  status: "started" | "running" | "completed" | "failed" | "skipped";
+  reason:
+    | "started"
+    | "search_not_successful"
+    | "no_eligible_matches"
+    | "agency_already_running"
+    | "agency_failed";
+  agentRunId?: string;
+  result?: {
+    approved: number;
+    prepared: number;
+    failed: number;
+    skipped: number;
+  };
+  error?: string;
 };
 
 const sourceFetchTimeoutMs = 90 * 1000;
@@ -198,12 +217,11 @@ export async function autoRunAgencyAfterSearch(input: {
   stats: { jobsFetched: number; jobsAfterDedupe: number; jobsAfterFilters: number; jobsSaved: number };
 }) {
   if (!["completed", "partial"].includes(input.status)) {
-    await appendProgress(input.runId, "Recruiting agency skipped because the search did not finish successfully.", input.stats);
+    await appendProgress(input.runId, "Recruiting agency skipped because the search did not finish successfully.", input.stats, {
+      status: "skipped",
+      reason: "search_not_successful",
+    });
     return { started: false, reason: "search_not_successful" as const };
-  }
-  if (input.jobsSaved <= 0) {
-    await appendProgress(input.runId, "Recruiting agency skipped because the search saved no new matches.", input.stats);
-    return { started: false, reason: "no_new_matches" as const };
   }
 
   const activeAgencyRun = await prisma.agentRun.findFirst({
@@ -212,7 +230,11 @@ export async function autoRunAgencyAfterSearch(input: {
     orderBy: { createdAt: "desc" },
   });
   if (activeAgencyRun) {
-    await appendProgress(input.runId, "Recruiting agency skipped because an agency run is already active.", input.stats);
+    await appendProgress(input.runId, "Recruiting agency skipped because an agency run is already active.", input.stats, {
+      status: "running",
+      reason: "agency_already_running",
+      agentRunId: activeAgencyRun.id,
+    });
     return { started: false, reason: "agency_already_running" as const, agentRunId: activeAgencyRun.id };
   }
 
@@ -234,22 +256,60 @@ export async function autoRunAgencyAfterSearch(input: {
     orderBy: [{ overallScore: "desc" }, { updatedAt: "desc" }],
   });
   if (!eligible) {
-    await appendProgress(input.runId, "Recruiting agency skipped because no new 90+ application-ready matches were eligible.", input.stats);
+    const message = input.jobsSaved <= 0
+      ? "Recruiting agency skipped because the search saved no new matches and no existing 90+ application-ready matches were eligible."
+      : "Recruiting agency skipped because no new 90+ application-ready matches were eligible.";
+    await appendProgress(input.runId, message, input.stats, {
+      status: "skipped",
+      reason: "no_eligible_matches",
+    });
     return { started: false, reason: "no_eligible_matches" as const };
   }
 
-  await appendProgress(input.runId, "Recruiting agency auto-started to approve strong matches and prepare application packets.", input.stats);
   try {
-    const result = await runRecruitingAgency({ minimumScore: 90, limit: 10, triggeredBy: "search_auto" });
+    const result = await runRecruitingAgency({
+      minimumScore: 90,
+      limit: 10,
+      triggeredBy: "search_auto",
+      onStarted: async (agentRunId) => {
+        await appendProgress(
+          input.runId,
+          input.jobsSaved <= 0
+            ? "Recruiting agency auto-started for existing eligible strong matches."
+            : "Recruiting agency auto-started to approve strong matches and prepare application packets.",
+          input.stats,
+          {
+            status: "started",
+            reason: "started",
+            agentRunId,
+          },
+        );
+      },
+    });
     await appendProgress(
       input.runId,
       `Recruiting agency completed: approved ${result.approved}, prepared ${result.prepared}, failed ${result.failed}.`,
       input.stats,
+      {
+        status: "completed",
+        reason: "started",
+        agentRunId: result.agentRunId,
+        result: {
+          approved: result.approved,
+          prepared: result.prepared,
+          failed: result.failed,
+          skipped: result.skipped,
+        },
+      },
     );
     return { started: true, reason: "started" as const, agentRunId: result.agentRunId, result };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown agency failure";
-    await appendProgress(input.runId, `Recruiting agency auto-run failed: ${message}`, input.stats);
+    await appendProgress(input.runId, `Recruiting agency auto-run failed: ${message}`, input.stats, {
+      status: "failed",
+      reason: "agency_failed",
+      error: message,
+    });
     return { started: false, reason: "agency_failed" as const, error: message };
   }
 }
@@ -273,8 +333,13 @@ async function updateRunStats(runId: string, stats: { jobsFetched: number; jobsA
   });
 }
 
-async function appendProgress(runId: string, message: string, stats?: { jobsFetched: number; jobsAfterDedupe: number; jobsAfterFilters: number; jobsSaved: number }) {
-  const progress = await nextProgress(runId, progressEvent(message, stats));
+async function appendProgress(
+  runId: string,
+  message: string,
+  stats?: { jobsFetched: number; jobsAfterDedupe: number; jobsAfterFilters: number; jobsSaved: number },
+  agencyHandoff?: AgencyHandoffProgress,
+) {
+  const progress = await nextProgress(runId, progressEvent(message, stats, agencyHandoff));
   await prisma.jobSearchRun.update({
     where: { id: runId },
     data: {
@@ -292,11 +357,16 @@ async function nextProgress(runId: string, event: ProgressEvent) {
   return [...current, event].slice(-120);
 }
 
-function progressEvent(message: string, stats?: { jobsFetched: number; jobsAfterDedupe: number; jobsAfterFilters: number; jobsSaved: number }): ProgressEvent {
+function progressEvent(
+  message: string,
+  stats?: { jobsFetched: number; jobsAfterDedupe: number; jobsAfterFilters: number; jobsSaved: number },
+  agencyHandoff?: AgencyHandoffProgress,
+): ProgressEvent {
   return {
     at: new Date().toISOString(),
     message,
     ...(stats ? { stats } : {}),
+    ...(agencyHandoff ? { agencyHandoff } : {}),
   };
 }
 

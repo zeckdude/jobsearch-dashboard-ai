@@ -2,6 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
+import ReplayOutlinedIcon from "@mui/icons-material/ReplayOutlined";
+import BuildCircleOutlinedIcon from "@mui/icons-material/BuildCircleOutlined";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -23,6 +25,46 @@ type ProgressEvent = {
     jobsAfterFilters?: number;
     jobsSaved?: number;
   };
+  agencyHandoff?: AgencyHandoff;
+};
+
+type AgencyHandoff = {
+  status: "started" | "running" | "completed" | "failed" | "skipped";
+  reason: "started" | "search_not_successful" | "no_eligible_matches" | "agency_already_running" | "agency_failed";
+  agentRunId?: string;
+  result?: {
+    approved: number;
+    prepared: number;
+    failed: number;
+    skipped: number;
+  };
+  error?: string;
+};
+
+type AgencyRunStatus = {
+  id: string;
+  status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
+  error: string | null;
+  currentNode: string | null;
+  workflowVersion: string | null;
+  startedAt: string;
+  updatedAt: string;
+  totals: {
+    found: number;
+    processed: number;
+    approved: number;
+    prepared: number;
+    failed: number;
+    skipped: number;
+  };
+  current: { type: string; message: string; payload: unknown } | null;
+  events: Array<{
+    id: string;
+    type: string;
+    message: string;
+    payload: unknown;
+    createdAt: string;
+  }>;
 };
 
 type SearchRun = {
@@ -41,10 +83,15 @@ type SearchRun = {
 export function SearchRunCommandCenter({ initialRun }: { initialRun: SearchRun | null }) {
   const router = useRouter();
   const [run, setRun] = useState<SearchRun | null>(initialRun);
+  const [agencyRun, setAgencyRun] = useState<AgencyRunStatus | null>(null);
   const [error, setError] = useState("");
   const running = run?.status === "running";
   const latest = run?.progress?.[run.progress.length - 1] ?? null;
   const timeline = useMemo(() => run?.progress?.slice(-10).reverse() ?? [], [run?.progress]);
+  const agencyHandoff = useMemo(() => latestAgencyHandoff(run?.progress ?? []), [run?.progress]);
+  const linkedAgencyRunId = agencyHandoff?.agentRunId ?? null;
+  const agencyRunning = agencyRun?.status === "PENDING" || agencyRun?.status === "RUNNING";
+  const agencyStale = Boolean(agencyRun && agencyRunning && Date.now() - new Date(agencyRun.updatedAt).getTime() > 10 * 60 * 1000);
 
   async function refreshLatest() {
     const response = await fetch("/api/jobs/search/run/status");
@@ -78,6 +125,43 @@ export function SearchRunCommandCenter({ initialRun }: { initialRun: SearchRun |
     return () => window.clearInterval(timer);
   }, [router, run?.status, running]);
 
+  useEffect(() => {
+    if (!linkedAgencyRunId) {
+      setAgencyRun(null);
+      return;
+    }
+    void refreshAgencyRun(linkedAgencyRunId);
+  }, [linkedAgencyRunId]);
+
+  useEffect(() => {
+    if (!linkedAgencyRunId || !agencyRunning) return;
+    const timer = window.setInterval(() => void refreshAgencyRun(linkedAgencyRunId), 1500);
+    return () => window.clearInterval(timer);
+  }, [agencyRunning, linkedAgencyRunId]);
+
+  async function refreshAgencyRun(runId: string) {
+    const response = await fetch(`/api/applications/agency/run/status?runId=${encodeURIComponent(runId)}`, { cache: "no-store" });
+    const body = await response.json().catch(() => ({}));
+    if (response.ok) setAgencyRun(body.run ?? null);
+  }
+
+  async function controlAgencyRun(action: "repair" | "retry") {
+    if (!agencyRun) return;
+    setError("");
+    const response = await fetch(`/api/agents/runs/${agencyRun.id}/control`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setError(body.error ?? "Unable to update agency run.");
+      return;
+    }
+    await refreshAgencyRun(body.childRunId ?? agencyRun.id);
+    router.refresh();
+  }
+
   return (
     <Card sx={{ borderColor: running ? "primary.main" : "divider", bgcolor: running ? "rgba(37, 99, 235, 0.06)" : "background.paper" }}>
       <CardContent>
@@ -108,6 +192,16 @@ export function SearchRunCommandCenter({ initialRun }: { initialRun: SearchRun |
             <RunStat label="Matched" value={run?.jobsAfterFilters ?? 0} helper="Passed filters" />
             <RunStat label="Saved" value={run?.jobsSaved ?? 0} helper="Sent to agency" />
           </Box>
+
+          {agencyHandoff ? (
+            <AgencyHandoffPanel
+              handoff={agencyHandoff}
+              agencyRun={agencyRun}
+              stale={agencyStale}
+              onRepair={() => void controlAgencyRun("repair")}
+              onRetry={() => void controlAgencyRun("retry")}
+            />
+          ) : null}
 
           {timeline.length ? (
             <Stack spacing={0.75}>
@@ -171,4 +265,125 @@ function normalizeRun(value: unknown): SearchRun | null {
     jobsSaved: Number(run.jobsSaved ?? 0),
     progress: Array.isArray(run.progress) ? run.progress as ProgressEvent[] : [],
   };
+}
+
+function latestAgencyHandoff(progress: ProgressEvent[]) {
+  return [...progress].reverse().find((event) => event.agencyHandoff)?.agencyHandoff ?? null;
+}
+
+function AgencyHandoffPanel({
+  handoff,
+  agencyRun,
+  stale,
+  onRepair,
+  onRetry,
+}: {
+  handoff: AgencyHandoff;
+  agencyRun: AgencyRunStatus | null;
+  stale: boolean;
+  onRepair: () => void;
+  onRetry: () => void;
+}) {
+  const failed = handoff.status === "failed" || agencyRun?.status === "FAILED";
+  const running = agencyRun?.status === "PENDING" || agencyRun?.status === "RUNNING";
+  const currentMessage = agencyRun?.current?.message ?? agencyHandoffMessage(handoff);
+  const totals = agencyRun
+    ? agencyRun.totals
+    : handoff.result
+      ? { found: null, processed: null, ...handoff.result }
+      : null;
+  const recentEvents = agencyRun?.events.filter((event) => event.type !== "run_started").slice(-4).reverse() ?? [];
+
+  return (
+    <Box sx={{ border: 1, borderColor: failed ? "error.main" : "divider", borderRadius: 1, p: 1.5, bgcolor: failed ? "rgba(239, 68, 68, 0.06)" : "background.paper" }}>
+      <Stack spacing={1.25}>
+        <Stack direction="row" spacing={0.75} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap" }}>
+          <Chip size="small" color={handoffChipColor(handoff.status, agencyRun?.status)} label="Agency handoff" />
+          <Chip size="small" variant="outlined" label={(agencyRun?.status ?? handoff.status).toLowerCase()} />
+          {handoff.agentRunId ? <Chip size="small" variant="outlined" label={`run ${handoff.agentRunId.slice(-6)}`} /> : null}
+          {stale ? <Chip size="small" color="warning" variant="outlined" label="stale" /> : null}
+        </Stack>
+        {running ? <LinearProgress /> : null}
+        <Box>
+          <Typography sx={{ fontWeight: 850 }}>{currentMessage}</Typography>
+          <Typography variant="caption" color="text.secondary">
+            {agencyRun ? `Updated ${new Date(agencyRun.updatedAt).toLocaleTimeString()}` : agencyHandoffDetail(handoff)}
+          </Typography>
+          {agencyRun?.currentNode || agencyRun?.workflowVersion ? (
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+              Node {workflowNodeLabel(agencyRun.currentNode)} · {agencyRun.workflowVersion ?? "graph workflow"}
+            </Typography>
+          ) : null}
+        </Box>
+        {totals ? (
+          <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+            {typeof totals.found === "number" ? <MetricChip label="Found" value={totals.found} /> : null}
+            {typeof totals.processed === "number" ? <MetricChip label="Processed" value={totals.processed} /> : null}
+            <MetricChip label="Approved" value={totals.approved} />
+            <MetricChip label="Packets" value={totals.prepared} />
+            <MetricChip label="Skipped" value={totals.skipped} />
+            <MetricChip label="Failed" value={totals.failed} color={totals.failed > 0 ? "error" : "default"} />
+          </Stack>
+        ) : null}
+        {(stale || failed) ? (
+          <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
+            {stale ? (
+              <Button size="small" color="warning" variant="outlined" startIcon={<BuildCircleOutlinedIcon />} onClick={onRepair}>
+                Repair stale run
+              </Button>
+            ) : null}
+            <Button size="small" color="primary" variant="outlined" startIcon={<ReplayOutlinedIcon />} onClick={onRetry} disabled={!agencyRun}>
+              Retry agency
+            </Button>
+          </Stack>
+        ) : null}
+        {handoff.error || agencyRun?.error ? <Alert severity="error">{handoff.error ?? agencyRun?.error}</Alert> : null}
+        {recentEvents.length ? (
+          <Stack spacing={0.6}>
+            {recentEvents.map((event) => (
+              <Box key={event.id} sx={{ display: "grid", gridTemplateColumns: "92px minmax(0, 1fr)", gap: 1 }}>
+                <Typography variant="caption" color="text.secondary">{new Date(event.createdAt).toLocaleTimeString()}</Typography>
+                <Typography variant="body2">{event.message}</Typography>
+              </Box>
+            ))}
+          </Stack>
+        ) : null}
+      </Stack>
+    </Box>
+  );
+}
+
+function agencyHandoffMessage(handoff: AgencyHandoff) {
+  if (handoff.status === "completed") return "Recruiting agency completed the search handoff.";
+  if (handoff.status === "failed") return "Recruiting agency failed during the search handoff.";
+  if (handoff.status === "running") return "Recruiting agency was already running for another handoff.";
+  if (handoff.status === "started") return "Recruiting agency started from this search.";
+  return "Recruiting agency skipped this search handoff.";
+}
+
+function agencyHandoffDetail(handoff: AgencyHandoff) {
+  if (handoff.reason === "search_not_successful") return "Search did not complete successfully.";
+  if (handoff.reason === "no_eligible_matches") return "No 90+ application-ready matches were eligible.";
+  if (handoff.reason === "agency_already_running") return "Another agency run is already active.";
+  if (handoff.reason === "agency_failed") return handoff.error ?? "Agency run failed.";
+  return "Strong matches were handed to the recruiting agency.";
+}
+
+function handoffChipColor(status: AgencyHandoff["status"], runStatus?: AgencyRunStatus["status"]) {
+  if (status === "failed" || runStatus === "FAILED") return "error";
+  if (status === "completed" || runStatus === "COMPLETED") return "success";
+  if (status === "skipped") return "default";
+  return "primary";
+}
+
+function workflowNodeLabel(value: string | null) {
+  if (!value) return "graph";
+  return value
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replaceAll("_", " ")
+    .toLowerCase();
+}
+
+function MetricChip({ label, value, color = "default" }: { label: string; value: number; color?: "default" | "error" }) {
+  return <Chip size="small" color={color} variant="outlined" label={`${label}: ${value}`} />;
 }

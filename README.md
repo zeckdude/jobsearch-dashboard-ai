@@ -204,7 +204,7 @@ During autofill testing, Apply Sprint includes a reset control for the selected 
 
 ## Recruiting Agency Workflow
 
-The recruiting agency now runs as a LangGraph-backed workflow while preserving the existing API contract for `/api/applications/agency/run` and `/api/applications/agency/run/status`. Search completion can also start it automatically with `triggeredBy: "search_auto"`; progress is appended to the search run so the Dashboard shows the handoff from discovery to agency approvals and packet preparation.
+The recruiting agency now runs as a LangGraph-backed workflow while preserving the existing API contract for `/api/applications/agency/run` and `/api/applications/agency/run/status`. Search completion can also start it automatically with `triggeredBy: "search_auto"`; structured handoff progress is appended to the search run so the Dashboard shows the linked agency `AgentRun`, live activity, approval/preparation totals, skip reasons, and repair/retry controls.
 
 - The graph moves through policy load, candidate discovery, candidate evaluation, approval, packet preparation, result recording, and run finalization.
 - `AgentRun` stores `graphThreadId`, `currentNode`, `workflowVersion`, and `workflowStateJson` so the UI and logs can show meaningful live activity.

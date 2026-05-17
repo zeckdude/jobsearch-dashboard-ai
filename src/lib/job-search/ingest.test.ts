@@ -36,7 +36,9 @@ describe("autoRunAgencyAfterSearch", () => {
     matchFindFirstMock.mockResolvedValue({ id: "match_1" } as never);
     searchRunFindUniqueMock.mockResolvedValue({ progress: [] } as never);
     searchRunUpdateMock.mockResolvedValue({ id: "search_1" } as never);
-    runAgencyMock.mockResolvedValue({
+    runAgencyMock.mockImplementation(async (input = {}) => {
+      await input.onStarted?.("agency_1");
+      return {
       agentRunId: "agency_1",
       requested: { minimumScore: 90, limit: 10, triggeredBy: "search_auto" },
       approved: 2,
@@ -45,6 +47,7 @@ describe("autoRunAgencyAfterSearch", () => {
       skipped: 8,
       results: [],
       message: "Recruiting agency prepared 2 application packages from 2 approved matches. 0 failed.",
+      };
     });
   });
 
@@ -64,18 +67,28 @@ describe("autoRunAgencyAfterSearch", () => {
         jobSearchProfile: { userId: "user_1" },
       }),
     }));
-    expect(runAgencyMock).toHaveBeenCalledWith({ minimumScore: 90, limit: 10, triggeredBy: "search_auto" });
+    expect(runAgencyMock).toHaveBeenCalledWith(expect.objectContaining({ minimumScore: 90, limit: 10, triggeredBy: "search_auto" }));
     expect(result).toMatchObject({ started: true, agentRunId: "agency_1" });
     expect(searchRunUpdateMock).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         progress: expect.arrayContaining([
-          expect.objectContaining({ message: expect.stringContaining("auto-started") }),
+          expect.objectContaining({
+            message: expect.stringContaining("completed"),
+            agencyHandoff: expect.objectContaining({
+              status: "completed",
+              reason: "started",
+              agentRunId: "agency_1",
+              result: expect.objectContaining({ approved: 2, prepared: 2, failed: 0, skipped: 8 }),
+            }),
+          }),
         ]),
       }),
     }));
   });
 
-  it("skips the agency when no jobs were saved", async () => {
+  it("skips the agency when no jobs were saved and no existing eligible matches remain", async () => {
+    matchFindFirstMock.mockResolvedValue(null);
+
     const result = await autoRunAgencyAfterSearch({
       runId: "search_1",
       userId: "user_1",
@@ -84,9 +97,31 @@ describe("autoRunAgencyAfterSearch", () => {
       stats: stats({ jobsSaved: 0 }),
     });
 
-    expect(result).toMatchObject({ started: false, reason: "no_new_matches" });
+    expect(result).toMatchObject({ started: false, reason: "no_eligible_matches" });
     expect(runAgencyMock).not.toHaveBeenCalled();
-    expect(matchFindFirstMock).not.toHaveBeenCalled();
+    expect(matchFindFirstMock).toHaveBeenCalled();
+    expect(searchRunUpdateMock).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        progress: expect.arrayContaining([
+          expect.objectContaining({
+            agencyHandoff: expect.objectContaining({ status: "skipped", reason: "no_eligible_matches" }),
+          }),
+        ]),
+      }),
+    }));
+  });
+
+  it("starts the agency for existing eligible matches even when the search saved no new matches", async () => {
+    const result = await autoRunAgencyAfterSearch({
+      runId: "search_1",
+      userId: "user_1",
+      status: "completed",
+      jobsSaved: 0,
+      stats: stats({ jobsSaved: 0 }),
+    });
+
+    expect(result).toMatchObject({ started: true, agentRunId: "agency_1" });
+    expect(runAgencyMock).toHaveBeenCalledWith(expect.objectContaining({ minimumScore: 90, limit: 10, triggeredBy: "search_auto" }));
   });
 
   it("skips the agency while another agency run is active", async () => {
@@ -103,6 +138,46 @@ describe("autoRunAgencyAfterSearch", () => {
     expect(result).toMatchObject({ started: false, reason: "agency_already_running", agentRunId: "agency_active" });
     expect(runAgencyMock).not.toHaveBeenCalled();
     expect(matchFindFirstMock).not.toHaveBeenCalled();
+    expect(searchRunUpdateMock).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        progress: expect.arrayContaining([
+          expect.objectContaining({
+            agencyHandoff: expect.objectContaining({
+              status: "running",
+              reason: "agency_already_running",
+              agentRunId: "agency_active",
+            }),
+          }),
+        ]),
+      }),
+    }));
+  });
+
+  it("records failed handoff metadata when the agency throws", async () => {
+    runAgencyMock.mockRejectedValue(new Error("packet generation failed"));
+
+    const result = await autoRunAgencyAfterSearch({
+      runId: "search_1",
+      userId: "user_1",
+      status: "completed",
+      jobsSaved: 2,
+      stats: stats(),
+    });
+
+    expect(result).toMatchObject({ started: false, reason: "agency_failed", error: "packet generation failed" });
+    expect(searchRunUpdateMock).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        progress: expect.arrayContaining([
+          expect.objectContaining({
+            agencyHandoff: expect.objectContaining({
+              status: "failed",
+              reason: "agency_failed",
+              error: "packet generation failed",
+            }),
+          }),
+        ]),
+      }),
+    }));
   });
 });
 

@@ -15,6 +15,7 @@ export type RecruitingAgencyRunInput = {
   limit?: number;
   triggeredBy?: RecruitingAgencyTrigger;
   parentRunId?: string;
+  onStarted?: (agentRunId: string) => Promise<void>;
 };
 
 export type RecruitingAgencyRunResult = {
@@ -103,6 +104,7 @@ export async function runRecruitingAgency(input: RecruitingAgencyRunInput = {}):
     ...initialState,
     agentRunId: agentRun.id,
   };
+  if (input.onStarted) await input.onStarted(agentRun.id).catch(() => null);
 
   try {
     const finalState = await invokeRecruitingAgencyWorkflow(workflowState);

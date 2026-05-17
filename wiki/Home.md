@@ -28,7 +28,7 @@ The product is not a blind mass-apply bot. It is designed around verified candid
 - Email response ingestion through IMAP and OAuth foundation for Gmail/Outlook.
 - Outcome tracking and outcome-learning recommendations.
 - Local Playwright application assistant with LangGraph-backed durable workflow state and safety gates.
-- Agency-first search flow: completed searches hand strong new matches to the recruiting agency automatically, while borderline matches remain in the Jobs exception queue.
+- Agency-first search flow: completed searches hand strong matches to the recruiting agency automatically, show the linked agency activity on Dashboard, and keep borderline matches in the Jobs exception queue.
 - LangGraph-backed recruiting agency workflow with live `AgentRun` activity, packet-preparation state, and explicit repair/retry/cancel controls.
 - MCP server exposing app tools to local agents.
 - Chrome extension for capturing externally found jobs into the system.
