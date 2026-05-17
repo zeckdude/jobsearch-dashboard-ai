@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { apiError } from "@/lib/api";
-import { startApplicationAssistantWorkflow } from "@/lib/applications/assistant-workflow";
+import { startApplicationAssistantWorkflow } from "@/lib/applications/assistant-workflow-graph";
 import { isLocalAssistantRequest, LOCAL_ASSISTANT_ERROR } from "@/lib/applications/local-assistant-origin";
 
 export const dynamic = "force-dynamic";

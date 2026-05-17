@@ -1,7 +1,6 @@
 "use client";
 
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
-import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -9,7 +8,6 @@ import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
 import Checkbox from "@mui/material/Checkbox";
 import Chip from "@mui/material/Chip";
-import InputAdornment from "@mui/material/InputAdornment";
 import Snackbar from "@mui/material/Snackbar";
 import Stack from "@mui/material/Stack";
 import ToggleButton from "@mui/material/ToggleButton";
@@ -20,7 +18,6 @@ import TableCell from "@mui/material/TableCell";
 import TableContainer from "@mui/material/TableContainer";
 import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
-import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { useRouter } from "next/navigation";
 import { PointerEvent, useMemo, useState } from "react";
@@ -50,19 +47,18 @@ export type JobsTableMatch = {
 
 type StatusView = "active" | "rejected" | "archived" | "all";
 
-export function JobsTable({ matches, statusView }: { matches: JobsTableMatch[]; statusView: StatusView }) {
+export function JobsTable({ matches, statusView, searchQuery = "" }: { matches: JobsTableMatch[]; statusView: StatusView; searchQuery?: string }) {
   const router = useRouter();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState("");
   const [severity, setSeverity] = useState<"success" | "error" | "info">("info");
-  const [signalQuery, setSignalQuery] = useState("");
   const [dismissedIds, setDismissedIds] = useState<string[]>([]);
   const [pendingRejectionFeedback, setPendingRejectionFeedback] = useState<Array<Pick<JobsTableMatch, "id" | "jobId" | "title" | "company">>>([]);
   const filteredMatches = useMemo(() => {
     const dismissed = new Set(dismissedIds);
-    return filterBySignals(matches, signalQuery).filter((match) => !dismissed.has(match.id));
-  }, [dismissedIds, matches, signalQuery]);
+    return filterByQuery(matches, searchQuery).filter((match) => !dismissed.has(match.id));
+  }, [dismissedIds, matches, searchQuery]);
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const filteredSelectedCount = filteredMatches.filter((match) => selectedSet.has(match.id)).length;
   const allSelected = filteredMatches.length > 0 && filteredSelectedCount === filteredMatches.length;
@@ -83,7 +79,11 @@ export function JobsTable({ matches, statusView }: { matches: JobsTableMatch[]; 
   function changeStatusView(nextView: StatusView | null) {
     if (!nextView || nextView === statusView) return;
     setSelectedIds([]);
-    router.push(nextView === "active" ? "/jobs" : `/jobs?statusView=${nextView}`);
+    const params = new URLSearchParams();
+    if (nextView !== "active") params.set("statusView", nextView);
+    if (searchQuery) params.set("q", searchQuery);
+    const query = params.toString();
+    router.push(query ? `/jobs?${query}` : "/jobs");
   }
 
   async function updateSelected(status: "needs_review" | "approved" | "rejected" | "archived") {
@@ -182,7 +182,7 @@ export function JobsTable({ matches, statusView }: { matches: JobsTableMatch[]; 
               {selectedIds.length ? `${selectedIds.length} selected` : `${filteredMatches.length} visible jobs`}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              {signalQuery ? `Filtered from ${matches.length} jobs by signal.` : "Approve a match to make it eligible for resume and cover letter generation."}
+              {searchQuery ? `Filtered from ${matches.length} jobs.` : "Approve a match to make it eligible for resume and cover letter generation."}
             </Typography>
           </Stack>
           <Stack direction={{ xs: "column", lg: "row" }} spacing={1} sx={{ alignItems: { lg: "center" } }}>
@@ -221,31 +221,11 @@ export function JobsTable({ matches, statusView }: { matches: JobsTableMatch[]; 
           </Stack>
         </Stack>
 
-        <Box sx={{ p: 1.5, borderBottom: 1, borderColor: "divider" }}>
-          <TextField
-            fullWidth
-            size="small"
-            label="Search signals"
-            placeholder="Try react, typescript, security, dashboard, ai, design systems"
-            value={signalQuery}
-            onChange={(event) => setSignalQuery(event.target.value)}
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchOutlinedIcon fontSize="small" />
-                  </InputAdornment>
-                ),
-              },
-            }}
-          />
-        </Box>
-
         <Stack spacing={1.25} sx={{ display: { xs: "flex", md: "none" }, p: 1.5 }}>
           {filteredMatches.length === 0 ? (
             <EmptyState
-              title={signalQuery ? "No jobs match that signal" : emptyStateCopy[statusView].title}
-              body={signalQuery ? "Try another signal such as react, TypeScript, security, dashboard, or AI." : emptyStateCopy[statusView].body}
+              title={searchQuery ? "No jobs match that search" : emptyStateCopy[statusView].title}
+              body={searchQuery ? "Try another company, title, location, profile, source, or signal." : emptyStateCopy[statusView].body}
             />
           ) : (
             filteredMatches.map((match) => (
@@ -273,8 +253,8 @@ export function JobsTable({ matches, statusView }: { matches: JobsTableMatch[]; 
                 <TableRow>
                   <TableCell colSpan={8}>
                     <EmptyState
-                      title={signalQuery ? "No jobs match that signal" : emptyStateCopy[statusView].title}
-                      body={signalQuery ? "Try another signal such as react, TypeScript, security, dashboard, or AI." : emptyStateCopy[statusView].body}
+                      title={searchQuery ? "No jobs match that search" : emptyStateCopy[statusView].title}
+                      body={searchQuery ? "Try another company, title, location, profile, source, or signal." : emptyStateCopy[statusView].body}
                     />
                   </TableCell>
                 </TableRow>
@@ -498,7 +478,7 @@ const emptyStateCopy: Record<StatusView, { title: string; body: string }> = {
   },
 };
 
-function filterBySignals(matches: JobsTableMatch[], query: string) {
+function filterByQuery(matches: JobsTableMatch[], query: string) {
   const terms = query
     .toLowerCase()
     .split(/[\s,]+/)
@@ -507,8 +487,17 @@ function filterBySignals(matches: JobsTableMatch[], query: string) {
   if (terms.length === 0) return matches;
 
   return matches.filter((match) => {
-    const signalText = match.strongestMatches.join(" ").toLowerCase();
-    return terms.every((term) => signalText.includes(term));
+    const searchableText = [
+      match.company,
+      match.title,
+      match.location,
+      match.profileName,
+      match.sourceName,
+      match.status,
+      match.action ?? "",
+      ...match.strongestMatches,
+    ].join(" ").toLowerCase();
+    return terms.every((term) => searchableText.includes(term));
   });
 }
 

@@ -1,10 +1,14 @@
 import AddIcon from "@mui/icons-material/Add";
+import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
 import type { Prisma } from "@prisma/client";
 import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
 import Chip from "@mui/material/Chip";
+import InputAdornment from "@mui/material/InputAdornment";
 import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { AppShell } from "@/app/app-shell";
 import { ActionButton } from "@/components/action-button";
@@ -24,10 +28,11 @@ export const dynamic = "force-dynamic";
 
 type StatusView = "active" | "rejected" | "archived" | "all";
 
-export default async function JobsPage({ searchParams }: { searchParams?: { statusView?: string } }) {
+export default async function JobsPage({ searchParams }: { searchParams?: { statusView?: string; q?: string; company?: string } }) {
   const statusView = normalizeStatusView(searchParams?.statusView);
+  const searchQuery = normalizeSearchQuery(searchParams?.q ?? searchParams?.company);
   const matches = await prisma.jobProfileMatch.findMany({
-    where: statusWhere(statusView),
+    where: statusWhere(statusView, searchQuery),
     include: {
       jobPosting: {
         include: { source: true },
@@ -111,7 +116,52 @@ export default async function JobsPage({ searchParams }: { searchParams?: { stat
           </CardContent>
         </Card>
 
+        <Card>
+          <CardContent>
+            <Stack
+              component="form"
+              method="GET"
+              direction={{ xs: "column", md: "row" }}
+              spacing={1}
+              sx={{ alignItems: { md: "center" } }}
+            >
+              {statusView === "active" ? null : <input type="hidden" name="statusView" value={statusView} />}
+              <TextField
+                fullWidth
+                size="small"
+                name="q"
+                label="Search jobs"
+                placeholder="Company, title, location, profile, source, or signal"
+                defaultValue={searchQuery}
+                slotProps={{
+                  input: {
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchOutlinedIcon fontSize="small" />
+                      </InputAdornment>
+                    ),
+                  },
+                }}
+              />
+              <Button type="submit" variant="contained" sx={{ minWidth: 120 }}>
+                Search
+              </Button>
+              {searchQuery ? (
+                <ActionButton href={statusView === "active" ? "/jobs" : `/jobs?statusView=${statusView}`} variant="outlined">
+                  Clear
+                </ActionButton>
+              ) : null}
+            </Stack>
+            {searchQuery ? (
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
+                Showing jobs matching {searchQuery}.
+              </Typography>
+            ) : null}
+          </CardContent>
+        </Card>
+
         <JobsTable
+          searchQuery={searchQuery}
           statusView={statusView}
           matches={visibleMatches.map((match) => {
             const evaluation = evaluationByMatch.get(`${match.jobPostingId}:${match.jobSearchProfileId}`);
@@ -143,13 +193,29 @@ function normalizeStatusView(value: string | undefined): StatusView {
   return value === "rejected" || value === "archived" || value === "all" ? value : "active";
 }
 
-function statusWhere(statusView: StatusView): Prisma.JobProfileMatchWhereInput {
-  if (statusView === "rejected") return { status: { in: ["rejected"] } };
-  if (statusView === "archived") return { status: { in: ["archived"] } };
-  if (statusView === "all") return {};
+function normalizeSearchQuery(value: string | undefined) {
+  return value?.trim().replace(/\s+/g, " ").slice(0, 80) ?? "";
+}
+
+function statusWhere(statusView: StatusView, searchQuery = ""): Prisma.JobProfileMatchWhereInput {
+  const jobPostingWhere: Prisma.JobPostingWhereInput = {
+    ...(searchQuery
+      ? {
+          OR: [
+            { company: { contains: searchQuery, mode: "insensitive" } },
+            { title: { contains: searchQuery, mode: "insensitive" } },
+            { location: { contains: searchQuery, mode: "insensitive" } },
+          ],
+        }
+      : {}),
+  };
+  if (statusView === "rejected") return { status: { in: ["rejected"] }, jobPosting: jobPostingWhere };
+  if (statusView === "archived") return { status: { in: ["archived"] }, jobPosting: jobPostingWhere };
+  if (statusView === "all") return { jobPosting: jobPostingWhere };
   return {
     status: { notIn: ["rejected", "archived"] },
     jobPosting: {
+      ...jobPostingWhere,
       applications: {
         none: {
           status: { in: submittedApplicationStatuses },
