@@ -268,7 +268,7 @@ export default async function SettingsPage() {
                 </Stack>
                 <Typography variant="h3">Learning impact</Typography>
                 <Typography color="text.secondary" sx={{ mt: 0.75 }}>
-                  Active proposal-backed learning is tracked against later agent runs and quality evaluations. This section is read-only; rollback remains manual.
+                  Active proposal-backed learning is tracked against later agent runs and quality evaluations. Disable a rule here when it is not helping future runs.
                 </Typography>
               </Box>
               {learningImpact.length ? (
@@ -283,10 +283,22 @@ export default async function SettingsPage() {
                         {item.averageScore === null ? null : <Chip size="small" variant="outlined" label={`${item.averageScore} avg`} />}
                       </Stack>
                       <Typography variant="body2">{item.impactSummary}</Typography>
-                      <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
-                        {item.latestAppliedAt ? `Latest applied ${item.latestAppliedAt.toLocaleString()}` : `Active since ${item.activeSince.toLocaleString()}`}
-                        {item.relatedFailedCount || item.relatedNeedsReviewCount ? ` · ${item.relatedFailedCount} failed, ${item.relatedNeedsReviewCount} needs review` : ""}
-                      </Typography>
+                      <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between", mt: 0.5 }}>
+                        <Typography variant="caption" color="text.secondary">
+                          {item.latestAppliedAt ? `Latest applied ${item.latestAppliedAt.toLocaleString()}` : `Active since ${item.activeSince.toLocaleString()}`}
+                          {item.relatedFailedCount || item.relatedNeedsReviewCount ? ` · ${item.relatedFailedCount} failed, ${item.relatedNeedsReviewCount} needs review` : ""}
+                        </Typography>
+                        <ActionButton
+                          postTo={`/api/skills/adjustments/${item.adjustmentId}/reject`}
+                          body={{ reason: item.status === "needs_review" ? item.impactSummary : "Disabled from learning impact." }}
+                          variant="outlined"
+                          color={item.status === "needs_review" ? "warning" : "secondary"}
+                          size="small"
+                          message="Learning rule disabled."
+                        >
+                          Disable learning
+                        </ActionButton>
+                      </Stack>
                     </Box>
                   ))}
                 </Stack>
@@ -361,9 +373,23 @@ export default async function SettingsPage() {
                         <Chip size="small" variant="outlined" label={adjustment.riskLevel.toLowerCase()} />
                       </Stack>
                       <Typography variant="body2">{adjustment.rationale}</Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {adjustment.appliedAt ? `Applied ${adjustment.appliedAt.toLocaleString()}` : `Created ${adjustment.createdAt.toLocaleString()}`}
-                      </Typography>
+                      <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between", mt: 0.5 }}>
+                        <Typography variant="caption" color="text.secondary">
+                          {adjustment.appliedAt ? `Applied ${adjustment.appliedAt.toLocaleString()}` : `Created ${adjustment.createdAt.toLocaleString()}`}
+                        </Typography>
+                        {adjustment.status === "ACTIVE" ? (
+                          <ActionButton
+                            postTo={`/api/skills/adjustments/${adjustment.id}/reject`}
+                            body={{ reason: "Disabled from learning audit log." }}
+                            variant="outlined"
+                            color="secondary"
+                            size="small"
+                            message="Learning rule disabled."
+                          >
+                            Disable learning
+                          </ActionButton>
+                        ) : null}
+                      </Stack>
                     </Box>
                   ))}
                 </Stack>
