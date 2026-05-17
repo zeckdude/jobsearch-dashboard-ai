@@ -8,6 +8,13 @@ export const runtime = "nodejs";
 
 const BodySchema = z.object({
   reason: z.string().max(500).optional(),
+  impact: z.object({
+    status: z.string().nullable().optional(),
+    appliedRunCount: z.number().nullable().optional(),
+    relatedFailedCount: z.number().nullable().optional(),
+    relatedNeedsReviewCount: z.number().nullable().optional(),
+    averageScore: z.number().nullable().optional(),
+  }).optional(),
 }).optional();
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
@@ -22,6 +29,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
       userId: user.id,
       reason: body?.reason,
       source: "settings_learning_impact",
+      impact: body?.impact,
     });
 
     return Response.json({

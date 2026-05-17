@@ -379,6 +379,7 @@ enum AgentQualityExampleSource {
   AGENT_RUN
   MANUAL_REPAIR
   BACKFILL
+  ROLLBACK
 }
 
 enum AgentQualityEvaluationStatus {

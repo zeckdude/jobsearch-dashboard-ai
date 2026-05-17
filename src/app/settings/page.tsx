@@ -268,7 +268,7 @@ export default async function SettingsPage() {
                 </Stack>
                 <Typography variant="h3">Learning impact</Typography>
                 <Typography color="text.secondary" sx={{ mt: 0.75 }}>
-                  Active proposal-backed learning is tracked against later agent runs and quality evaluations. Disable a rule here when it is not helping future runs.
+                  Active proposal-backed learning is tracked against later agent runs and quality evaluations. Disable a rule here when it is not helping; rollback is captured as a quality signal for later review.
                 </Typography>
               </Box>
               {learningImpact.length ? (
@@ -290,7 +290,16 @@ export default async function SettingsPage() {
                         </Typography>
                         <ActionButton
                           postTo={`/api/skills/adjustments/${item.adjustmentId}/reject`}
-                          body={{ reason: item.status === "needs_review" ? item.impactSummary : "Disabled from learning impact." }}
+                          body={{
+                            reason: item.status === "needs_review" ? item.impactSummary : "Disabled from learning impact.",
+                            impact: {
+                              status: item.status,
+                              appliedRunCount: item.appliedRunCount,
+                              relatedFailedCount: item.relatedFailedCount,
+                              relatedNeedsReviewCount: item.relatedNeedsReviewCount,
+                              averageScore: item.averageScore,
+                            },
+                          }}
                           variant="outlined"
                           color={item.status === "needs_review" ? "warning" : "secondary"}
                           size="small"

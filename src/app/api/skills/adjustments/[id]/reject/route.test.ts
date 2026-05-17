@@ -27,7 +27,16 @@ describe("POST /api/skills/adjustments/[id]/reject", () => {
     const response = await POST(new Request("http://localhost/api/skills/adjustments/adjustment_1/reject", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ reason: "It is not helping." }),
+      body: JSON.stringify({
+        reason: "It is not helping.",
+        impact: {
+          status: "needs_review",
+          appliedRunCount: 2,
+          relatedFailedCount: 1,
+          relatedNeedsReviewCount: 0,
+          averageScore: 42,
+        },
+      }),
     }), { params: { id: "adjustment_1" } });
 
     expect(rejectSkillAdjustmentMock).toHaveBeenCalledWith({
@@ -35,6 +44,13 @@ describe("POST /api/skills/adjustments/[id]/reject", () => {
       userId: "user_1",
       reason: "It is not helping.",
       source: "settings_learning_impact",
+      impact: {
+        status: "needs_review",
+        appliedRunCount: 2,
+        relatedFailedCount: 1,
+        relatedNeedsReviewCount: 0,
+        averageScore: 42,
+      },
     });
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
