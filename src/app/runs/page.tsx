@@ -69,7 +69,7 @@ export default async function RunsPage() {
                 <TableCell>Status</TableCell>
                 <TableCell>Fetched</TableCell>
                 <TableCell>After dedupe</TableCell>
-                <TableCell>Needs review</TableCell>
+                <TableCell>Matched</TableCell>
                 <TableCell>Saved</TableCell>
                 <TableCell>Latest update</TableCell>
               </TableRow>
@@ -107,7 +107,7 @@ function runsNextAction(latestRun: { status: string; progress: unknown; jobsSave
     return {
       kind: "search" as const,
       title: "Run discovery",
-      detail: "Fetch, dedupe, score, and save matching jobs into the review queue.",
+      detail: "Fetch, dedupe, score, save matching jobs, and hand strong matches to the agency.",
       label: "Run search",
       color: "primary" as const,
       icon: <SearchOutlinedIcon />,
@@ -127,10 +127,10 @@ function runsNextAction(latestRun: { status: string; progress: unknown; jobsSave
   if (latestRun.jobsSaved > 0) {
     return {
       kind: "link" as const,
-      title: "Review saved jobs",
-      detail: `The latest run saved ${latestRun.jobsSaved} job${latestRun.jobsSaved === 1 ? "" : "s"} into the review queue.`,
-      label: "Open jobs",
-      href: "/jobs",
+      title: "Agency is handling saved jobs",
+      detail: `The latest run saved ${latestRun.jobsSaved} job${latestRun.jobsSaved === 1 ? "" : "s"} and handed strong matches to the agency when eligible.`,
+      label: "Open dashboard",
+      href: "/dashboard",
       color: "success" as const,
       icon: <VisibilityOutlinedIcon />,
     };

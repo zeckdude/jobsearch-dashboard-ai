@@ -78,8 +78,8 @@ export default async function ApplicationsPage() {
       <Stack spacing={3}>
         <PageHeader
           eyebrow="Application control"
-          title="Applications"
-          description="Your recruiting agency turns high-confidence matches into approved application packets, then keeps ready submissions, follow-ups, interviews, and outcomes organized."
+          title="Apply Sprint"
+          description="Work the applications the agency has approved and prepared. The assistant helps fill forms, but final submission stays under your control."
         />
         <Card sx={{ borderColor: nextAction.color === "success" ? "success.main" : "primary.main", bgcolor: nextAction.color === "success" ? "rgba(16, 185, 129, 0.08)" : "rgba(37, 99, 235, 0.08)" }}>
           <CardContent>
@@ -118,7 +118,7 @@ export default async function ApplicationsPage() {
             <Stack spacing={1.5}>
               <Typography variant="h3">Agency command center</Typography>
               <Typography variant="body2" color="text.secondary">
-                Auto-approve 90+ matches, create application trackers, and generate tailored packets. Submission remains assist-only: the agent prepares and fills, you confirm final submit.
+                Search now hands strong matches to the agency automatically. Use these controls for manual retries, approved-job packet backfills, and launching the next ready application.
               </Typography>
               <Stack direction={{ xs: "column", md: "row" }} spacing={1} sx={{ alignItems: { md: "center" } }}>
                 <AgencyRunControl />
@@ -221,7 +221,7 @@ export default async function ApplicationsPage() {
         </Box>
         {applications.length === 0 ? (
           <Card>
-            <EmptyState title="No applications tracked" body="Run the recruiting agency to auto-approve strong matches and create application packets." />
+            <EmptyState title="No applications tracked" body="Run search from the Dashboard. Strong matches will flow through the recruiting agency into prepared application packets." />
           </Card>
         ) : null}
       </Stack>

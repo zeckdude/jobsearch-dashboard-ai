@@ -58,7 +58,7 @@ export function BulkPrepareControl({ compact = false, defaultMinimumScore = 85, 
         body: JSON.stringify({
           minimumScore,
           limit,
-          statuses: ["needs_review", "approved", "resume_generated", "cover_letter_generated"],
+          statuses: ["approved", "resume_generated", "cover_letter_generated"],
         }),
         keepalive: true,
       });
@@ -79,7 +79,7 @@ export function BulkPrepareControl({ compact = false, defaultMinimumScore = 85, 
             setNotice(
               payload.nextAvailable
                 ? `No jobs met the ${minimumScore}+ threshold. Next eligible match is ${payload.nextAvailable.score}: ${payload.nextAvailable.company} - ${payload.nextAvailable.title}. Lower the min score to prepare it.`
-                : "No eligible jobs found. Approve jobs or run a search before auto-preparing.",
+                : "No approved jobs are ready for packet preparation. Run the recruiting agency first.",
             );
             return;
           }
@@ -144,7 +144,7 @@ export function BulkPrepareControl({ compact = false, defaultMinimumScore = 85, 
               <Box>
                 <Typography variant="h3">Auto-prepare top matches</Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Generate custom resumes and cover letters for the highest scoring jobs. Nothing is submitted automatically.
+                  Generate custom resumes and cover letters for already-approved jobs. Search results must pass agency approval before preparation.
                 </Typography>
               </Box>
               {form}

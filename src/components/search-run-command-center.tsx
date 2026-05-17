@@ -91,7 +91,7 @@ export function SearchRunCommandCenter({ initialRun }: { initialRun: SearchRun |
               </Stack>
               <Typography variant="h3">{running ? "Search is running" : run ? "Latest search run" : "No search run yet"}</Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                {latest?.message ?? "Start discovery to fetch, dedupe, score, and save jobs into the review queue."}
+                {latest?.message ?? "Start discovery to fetch, dedupe, score, save jobs, and hand strong matches to the recruiting agency."}
               </Typography>
             </Box>
             <Button variant="contained" startIcon={<PlayArrowIcon />} disabled={running} onClick={startRun}>
@@ -106,7 +106,7 @@ export function SearchRunCommandCenter({ initialRun }: { initialRun: SearchRun |
             <RunStat label="Fetched" value={run?.jobsFetched ?? 0} helper="From sources" />
             <RunStat label="New" value={run?.jobsAfterDedupe ?? 0} helper="After dedupe" />
             <RunStat label="Matched" value={run?.jobsAfterFilters ?? 0} helper="Passed filters" />
-            <RunStat label="Saved" value={run?.jobsSaved ?? 0} helper="Needs review" />
+            <RunStat label="Saved" value={run?.jobsSaved ?? 0} helper="Sent to agency" />
           </Box>
 
           {timeline.length ? (

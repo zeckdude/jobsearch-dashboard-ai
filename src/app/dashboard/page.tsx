@@ -15,7 +15,6 @@ import Typography from "@mui/material/Typography";
 import { AppShell } from "@/app/app-shell";
 import { ActionButton } from "@/components/action-button";
 import { AgencyRunControl } from "@/components/agency-run-control";
-import { BulkPrepareControl } from "@/components/bulk-prepare-control";
 import { JobRejectButton } from "@/components/job-reject-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
@@ -143,8 +142,8 @@ export default async function DashboardPage() {
       <Stack spacing={3}>
         <PageHeader
           eyebrow="Command center"
-          title="Decision Dashboard"
-          description="Start here: resolve blockers, review strong matches, and move ready applications through Apply Sprint."
+          title="Agency Command Center"
+          description="Run search, watch the recruiting agency approve strong fits, and move prepared applications through Apply Sprint."
           actions={
             <>
             <ActionButton href="/jobs/manual" variant="outlined" startIcon={<AddCircleOutlineIcon />}>Add manual job</ActionButton>
@@ -192,20 +191,36 @@ export default async function DashboardPage() {
 
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: "repeat(4, 1fr)" }, gap: 2 }}>
           <Metric label="Enabled profiles" value={profiles.length.toString()} helper="Active campaigns" />
-          <Metric label="Needs review" value={needsReviewCount.toString()} helper="Waiting for approval" />
-          <Metric label="Ready to apply" value={readyToApply.toString()} helper="Materials reviewed" />
+          <Metric label="Exceptions" value={needsReviewCount.toString()} helper="Needs your decision" />
+          <Metric label="Ready to apply" value={readyToApply.toString()} helper="Prepared by agency" />
           <Metric label="Latest run" value={latestRun?.status ?? "None"} helper={latestRun ? latestRun.startedAt.toLocaleString() : "No runs yet"} />
         </Box>
 
-        <BulkPrepareControl defaultMinimumScore={90} defaultLimit={10} />
+        <Card>
+          <CardContent>
+            <Stack spacing={1.5}>
+              <Box>
+                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 1 }}>
+                  <Chip size="small" color="primary" label="Recruiting agency" />
+                  <Chip size="small" variant="outlined" label="Auto-runs after search" />
+                </Stack>
+                <Typography variant="h3">Agency activity</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                  After search saves new strong matches, the agency approves appropriate jobs and prepares packets. Borderline jobs remain as exceptions below.
+                </Typography>
+              </Box>
+              <AgencyRunControl label="Run agency now" variant="outlined" showLatestOnMount />
+            </Stack>
+          </CardContent>
+        </Card>
 
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "minmax(0, 1fr)", xl: "minmax(0, 1.6fr) minmax(320px, 0.9fr)" }, gap: 2, alignItems: "start" }}>
           <Box sx={{ minWidth: 0 }}>
             <Stack spacing={2}>
-              <SectionTitle title="Needs Review" />
+              <SectionTitle title="Exception Review" />
               {visibleNeedsReview.length === 0 ? (
                 <Card>
-                  <EmptyState title="No jobs waiting" body="Run a search or add a manual job to fill the review queue." />
+                  <EmptyState title="No exceptions waiting" body="Run a search and the agency will approve strong fits automatically. Borderline jobs will appear here." />
                 </Card>
               ) : (
                 visibleNeedsReview.map((match) => (
@@ -502,10 +517,10 @@ function getNextAction({
   if (needsReviewCount > 0) {
     return {
       color: "primary" as const,
-      title: "Review matched jobs",
-      detail: "Approve strong matches so the app can generate packets and move them into Apply Sprint.",
+      title: "Review agency exceptions",
+      detail: "The agency leaves uncertain jobs here when it needs your judgment before approving or rejecting.",
       href: "/jobs",
-      label: "Review jobs",
+      label: "Review exceptions",
       count: needsReviewCount,
     };
   }
@@ -513,10 +528,10 @@ function getNextAction({
   const latestRunIsStale = !latestRunStartedAt || Date.now() - latestRunStartedAt.getTime() > 86_400_000;
   return {
     color: "primary" as const,
-    title: latestRunIsStale ? "Run job discovery" : "Check search results",
-    detail: latestRunIsStale ? "Refresh job discovery so the queue has current roles to score." : "Discovery is fresh. Check the latest results and approve strong matches.",
+    title: latestRunIsStale ? "Run job discovery" : "Monitor search and agency",
+    detail: latestRunIsStale ? "Refresh discovery; the agency will review strong results after the search finishes." : "Discovery is fresh. Review agency activity or work the exception queue.",
     href: latestRunIsStale ? "/runs" : "/jobs",
-    label: latestRunIsStale ? "Run search" : "Open jobs",
+    label: latestRunIsStale ? "Run search" : "Open exceptions",
   };
 }
 

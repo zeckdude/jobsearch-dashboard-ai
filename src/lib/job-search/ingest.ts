@@ -1,5 +1,6 @@
 import { JobSearchRun, NotificationSettings, Prisma, User } from "@prisma/client";
 import { runDuplicateStaleJobDetectorAgent } from "@/lib/agents/duplicate-stale-job-detector";
+import { runRecruitingAgency } from "@/lib/applications/recruiting-agency";
 import { runJobFitScoringAgent } from "@/lib/agents/job-fit-scorer";
 import { createCanonicalJobKeys, createJobContentHash, hasSameCanonicalJob } from "@/lib/job-search/dedupe";
 import { getAdapterForSource } from "@/lib/job-search/adapters";
@@ -174,12 +175,83 @@ export async function runJobSearch(triggeredBy: "manual" | "cron" = "manual", ru
   await runDuplicateStaleJobDetectorAgent({ limit: 1000, userId: user?.id }).catch(async (error) => {
     await appendProgress(run.id, `Duplicate/stale detector failed: ${error instanceof Error ? error.message : "Unknown detector failure"}`, stats);
   });
+  await autoRunAgencyAfterSearch({
+    runId: run.id,
+    userId: user?.id ?? null,
+    status,
+    jobsSaved: stats.jobsSaved,
+    stats,
+  });
 
   if (user?.notificationSettings) {
     await notifyAfterRun(user, user.notificationSettings, updatedRun, newMatches);
   }
 
   return updatedRun;
+}
+
+export async function autoRunAgencyAfterSearch(input: {
+  runId: string;
+  userId?: string | null;
+  status: "completed" | "partial" | "failed";
+  jobsSaved: number;
+  stats: { jobsFetched: number; jobsAfterDedupe: number; jobsAfterFilters: number; jobsSaved: number };
+}) {
+  if (!["completed", "partial"].includes(input.status)) {
+    await appendProgress(input.runId, "Recruiting agency skipped because the search did not finish successfully.", input.stats);
+    return { started: false, reason: "search_not_successful" as const };
+  }
+  if (input.jobsSaved <= 0) {
+    await appendProgress(input.runId, "Recruiting agency skipped because the search saved no new matches.", input.stats);
+    return { started: false, reason: "no_new_matches" as const };
+  }
+
+  const activeAgencyRun = await prisma.agentRun.findFirst({
+    where: { agentType: "RECRUITING_AGENCY", status: { in: ["PENDING", "RUNNING"] } },
+    select: { id: true },
+    orderBy: { createdAt: "desc" },
+  });
+  if (activeAgencyRun) {
+    await appendProgress(input.runId, "Recruiting agency skipped because an agency run is already active.", input.stats);
+    return { started: false, reason: "agency_already_running" as const, agentRunId: activeAgencyRun.id };
+  }
+
+  const eligible = await prisma.jobProfileMatch.findFirst({
+    where: {
+      status: "needs_review",
+      overallScore: { gte: 90 },
+      ...(input.userId ? { jobSearchProfile: { userId: input.userId } } : {}),
+      jobPosting: {
+        applicationUrl: { not: null },
+        applications: {
+          none: {
+            status: { in: ["applied", "follow_up_due", "screening", "interviewing", "offer", "rejected_by_company"] },
+          },
+        },
+      },
+    },
+    select: { id: true },
+    orderBy: [{ overallScore: "desc" }, { updatedAt: "desc" }],
+  });
+  if (!eligible) {
+    await appendProgress(input.runId, "Recruiting agency skipped because no new 90+ application-ready matches were eligible.", input.stats);
+    return { started: false, reason: "no_eligible_matches" as const };
+  }
+
+  await appendProgress(input.runId, "Recruiting agency auto-started to approve strong matches and prepare application packets.", input.stats);
+  try {
+    const result = await runRecruitingAgency({ minimumScore: 90, limit: 10, triggeredBy: "search_auto" });
+    await appendProgress(
+      input.runId,
+      `Recruiting agency completed: approved ${result.approved}, prepared ${result.prepared}, failed ${result.failed}.`,
+      input.stats,
+    );
+    return { started: true, reason: "started" as const, agentRunId: result.agentRunId, result };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown agency failure";
+    await appendProgress(input.runId, `Recruiting agency auto-run failed: ${message}`, input.stats);
+    return { started: false, reason: "agency_failed" as const, error: message };
+  }
 }
 
 function jobIdentity(job: Pick<NormalizedJobPosting, "company" | "title" | "location">) {
@@ -375,7 +447,7 @@ async function notifyAfterRun(
     "",
     `Fetched: ${run.jobsFetched}`,
     `New after dedupe: ${run.jobsAfterDedupe}`,
-    `Needs review: ${run.jobsSaved}`,
+    `Saved for agency review: ${run.jobsSaved}`,
     `Strong matches: ${strongMatches.length}`,
     "",
     "Top matches:",

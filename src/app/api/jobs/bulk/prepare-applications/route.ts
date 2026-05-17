@@ -10,7 +10,7 @@ const requestSchema = z.object({
   minimumScore: z.number().int().min(0).max(100).default(85),
   limit: z.number().int().min(1).max(50).default(10),
   profileId: z.string().optional(),
-  statuses: z.array(z.enum(["needs_review", "approved", "resume_generated", "cover_letter_generated"])).default(["needs_review", "approved"]),
+  statuses: z.array(z.enum(["approved", "resume_generated", "cover_letter_generated"])).default(["approved"]),
 });
 
 export async function POST(request: Request) {

@@ -8,11 +8,12 @@ import { prisma } from "@/lib/prisma";
 import { runSkill } from "@/lib/skills/run-skill";
 
 const WORKFLOW_VERSION = "recruiting-agency-graph-v1";
+export type RecruitingAgencyTrigger = "manual" | "cron" | "search_auto";
 
 export type RecruitingAgencyRunInput = {
   minimumScore?: number;
   limit?: number;
-  triggeredBy?: "manual" | "cron";
+  triggeredBy?: RecruitingAgencyTrigger;
   parentRunId?: string;
 };
 
@@ -21,7 +22,7 @@ export type RecruitingAgencyRunResult = {
   requested: {
     minimumScore: number;
     limit: number;
-    triggeredBy: "manual" | "cron";
+    triggeredBy: RecruitingAgencyTrigger;
   };
   approved: number;
   prepared: number;
@@ -48,7 +49,7 @@ type RecruitingAgencyWorkflowState = {
   userId: string;
   minimumScore: number;
   limit: number;
-  triggeredBy: "manual" | "cron";
+  triggeredBy: RecruitingAgencyTrigger;
   currentNode: string;
   candidates: AgencyCandidate[];
   results: RecruitingAgencyRunResult["results"];
@@ -155,7 +156,7 @@ async function buildRecruitingAgencyGraph() {
     userId: Annotation<string>(),
     minimumScore: Annotation<number>(),
     limit: Annotation<number>(),
-    triggeredBy: Annotation<"manual" | "cron">(),
+    triggeredBy: Annotation<RecruitingAgencyTrigger>(),
     currentNode: Annotation<string>(),
     candidates: Annotation<AgencyCandidate[]>({
       reducer: (_, right) => right,

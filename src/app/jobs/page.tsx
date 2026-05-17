@@ -66,8 +66,8 @@ export default async function JobsPage({ searchParams }: { searchParams?: { stat
       <Stack spacing={3}>
         <PageHeader
           eyebrow="Decision queue"
-          title="Jobs"
-          description="Review scored roles from job boards, company sources, and browser capture. Approving a job creates the application tracker and moves it toward packet generation."
+          title="Job Exceptions"
+          description="Review borderline roles the recruiting agency did not confidently approve. Strong fits are approved and prepared automatically after search."
           actions={
             <>
               <ActionButton href="/jobs/manual" variant="outlined" startIcon={<AddIcon />}>Add manual job</ActionButton>
@@ -88,11 +88,11 @@ export default async function JobsPage({ searchParams }: { searchParams?: { stat
                   {approvedForPrep.length ? <Chip size="small" variant="outlined" label={`${approvedForPrep.length} approved`} /> : null}
                 </Stack>
                 <Typography variant="h3">
-                  {topReviewMatch ? "Review the top match" : approvedForPrep.length ? "Prepare approved jobs" : "Run discovery"}
+                  {topReviewMatch ? "Review the top exception" : approvedForPrep.length ? "Prepare approved jobs" : "Run discovery"}
                 </Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                   {topReviewMatch
-                    ? `${topReviewMatch.jobPosting.company} - ${topReviewMatch.jobPosting.title} is the highest-scoring item waiting for a decision.`
+                    ? `${topReviewMatch.jobPosting.company} - ${topReviewMatch.jobPosting.title} needs your decision before the agency can move it forward.`
                     : approvedForPrep.length
                       ? "Approved jobs are ready for tailored resumes, cover letters, and application packets."
                       : "No reviewable jobs are waiting. Run discovery or add a manual job."}
@@ -110,8 +110,6 @@ export default async function JobsPage({ searchParams }: { searchParams?: { stat
             </Stack>
           </CardContent>
         </Card>
-
-        <BulkPrepareControl defaultMinimumScore={75} defaultLimit={10} />
 
         <JobsTable
           statusView={statusView}

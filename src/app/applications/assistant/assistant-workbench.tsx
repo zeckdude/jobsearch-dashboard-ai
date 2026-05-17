@@ -376,7 +376,7 @@ export function AssistantWorkbench({ applications, atsBlockers }: { applications
                   </Stack>
                 </Stack>
               ) : (
-                <Alert severity="info">No ready applications. Use Auto-prepare from Dashboard or Applications first.</Alert>
+                <Alert severity="info">No ready applications. Run search so the recruiting agency can approve strong matches and prepare packets.</Alert>
               )}
               <Divider />
               {selectedBlocker ? (

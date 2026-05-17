@@ -481,8 +481,8 @@ function SwipeJobCard({ match, onAction }: { match: JobsTableMatch; onAction: (m
 
 const emptyStateCopy: Record<StatusView, { title: string; body: string }> = {
   active: {
-    title: "No active jobs",
-    body: "Add a manual job or run a search to populate the review queue.",
+    title: "No job exceptions",
+    body: "Run search from the Dashboard. Strong matches will be handled by the agency; uncertain matches will appear here.",
   },
   rejected: {
     title: "No rejected jobs",
@@ -494,7 +494,7 @@ const emptyStateCopy: Record<StatusView, { title: string; body: string }> = {
   },
   all: {
     title: "No matched jobs yet",
-    body: "Add a manual job or run a search to populate the review queue.",
+    body: "Run search from the Dashboard or add a manual job to start matching.",
   },
 };
 

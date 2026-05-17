@@ -129,9 +129,9 @@ Implementation notes:
 
 ## Recruiting Agency Workflow
 
-The recruiting agency workflow combines LangGraph orchestration with existing deterministic candidate filtering, duplicate suppression, and packet preparation skills.
+The recruiting agency workflow combines LangGraph orchestration with existing deterministic candidate filtering, duplicate suppression, and packet preparation skills. Search runs can start this workflow automatically after saving new eligible 90+ matches, unless another agency run is already pending or running.
 
-1. User or cron starts the recruiting agency.
+1. User, cron, or search auto-handoff starts the recruiting agency.
 2. LangGraph creates a durable `AgentRun` thread and loads the approval policy.
 3. The workflow finds eligible unsuppressed matches above the configured score threshold.
 4. Each candidate is evaluated, approved when eligible, and passed to the packet-preparation skill.
