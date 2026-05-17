@@ -8,6 +8,7 @@ const ACTIVE_MATCH_STATUSES = ["discovered", "needs_review", "approved", "saved_
 const APPLIED_STATUSES = ["applied", "follow_up_due", "screening", "interviewing", "offer", "rejected_by_company"] as const;
 const POSITIVE_STATUSES = ["screening", "interviewing", "offer"] as const;
 const NEGATIVE_STATUSES = ["rejected", "rejected_by_company", "archived"] as const;
+const OUTCOME_SNAPSHOT_THROTTLE_MS = 30 * 60 * 1000;
 
 export type OutcomeCalibrationRefreshSource =
   | "settings_manual"
@@ -144,6 +145,33 @@ export type OutcomeCalibrationReport = {
 
 type LoadedData = Awaited<ReturnType<typeof loadOutcomeData>>;
 
+export type OutcomeTrendDirection = "improving" | "flat" | "regressing" | "insufficient_data";
+
+export type OutcomeCalibrationTrendReport = {
+  snapshots: Array<{
+    id: string;
+    source: string;
+    createdAt: Date;
+    summary: OutcomeCalibrationReport["summary"];
+    workflows: OutcomeCalibrationReport["workflows"];
+  }>;
+  metrics: Array<{
+    key: keyof OutcomeCalibrationReport["summary"];
+    label: string;
+    latest: number | null;
+    previous: number | null;
+    delta: number | null;
+    direction: OutcomeTrendDirection;
+  }>;
+  workflows: Array<{
+    target: AgentQualityTarget;
+    latestScore: number | null;
+    previousScore: number | null;
+    delta: number | null;
+    direction: OutcomeTrendDirection;
+  }>;
+};
+
 export async function getOutcomeCalibration(userId?: string | null): Promise<OutcomeCalibrationReport> {
   const data = await loadOutcomeData(userId);
   return buildOutcomeCalibrationReport(data);
@@ -170,7 +198,39 @@ export async function recomputeOutcomeCalibration(
     proposals += result.created;
   }
 
+  await createOutcomeCalibrationSnapshot(ownerId, options.source ?? "settings_manual", report, {
+    throttle: (options.source ?? "settings_manual") !== "settings_manual",
+  }).catch((error) => {
+    console.warn("Outcome calibration snapshot failed.", error);
+  });
+
   return { ...report, createdExamples, proposals };
+}
+
+export async function getOutcomeCalibrationTrends(userId?: string | null): Promise<OutcomeCalibrationTrendReport> {
+  const user = userId ? { id: userId } : await prisma.user.findFirst({ orderBy: { createdAt: "asc" }, select: { id: true } });
+  if (!user?.id) return { snapshots: [], metrics: buildMetricTrends(null, null), workflows: buildWorkflowTrends(null, null) };
+
+  const snapshots = await prisma.outcomeCalibrationSnapshot.findMany({
+    where: { userId: user.id },
+    orderBy: { createdAt: "desc" },
+    take: 30,
+  });
+  const normalized = snapshots.map((snapshot) => ({
+    id: snapshot.id,
+    source: snapshot.source,
+    createdAt: snapshot.createdAt,
+    summary: summaryJson(snapshot.summaryJson),
+    workflows: workflowsJson(snapshot.workflowsJson),
+  }));
+  const latest = normalized[0] ?? null;
+  const previous = normalized.find((snapshot) => snapshot.id !== latest?.id) ?? null;
+
+  return {
+    snapshots: normalized,
+    metrics: buildMetricTrends(latest?.summary ?? null, previous?.summary ?? null),
+    workflows: buildWorkflowTrends(latest?.workflows ?? null, previous?.workflows ?? null),
+  };
 }
 
 export async function proposeOutcomeReviewActionImprovements(userId?: string | null) {
@@ -330,6 +390,44 @@ function buildOutcomeCalibrationReport(data: LoadedData): OutcomeCalibrationRepo
     details,
     actions: linkReviewActionProposals(buildReviewActions(details), data.proposals),
   };
+}
+
+async function createOutcomeCalibrationSnapshot(
+  userId: string,
+  source: OutcomeCalibrationRefreshSource,
+  report: OutcomeCalibrationReport,
+  options: { throttle: boolean },
+) {
+  if (options.throttle) {
+    const recent = await prisma.outcomeCalibrationSnapshot.findFirst({
+      where: {
+        userId,
+        createdAt: { gte: new Date(Date.now() - OUTCOME_SNAPSHOT_THROTTLE_MS) },
+      },
+      select: { id: true },
+      orderBy: { createdAt: "desc" },
+    });
+    if (recent) return null;
+  }
+
+  return prisma.outcomeCalibrationSnapshot.create({
+    data: {
+      userId,
+      source,
+      summaryJson: sanitizeTraceInput(report.summary) as Prisma.InputJsonValue,
+      workflowsJson: sanitizeTraceInput(report.workflows) as Prisma.InputJsonValue,
+      signalsJson: sanitizeTraceInput(report.signals) as Prisma.InputJsonValue,
+      actionsJson: sanitizeTraceInput(report.actions.map((action) => ({
+        id: action.id,
+        category: action.category,
+        severity: action.severity,
+        affectedCount: action.affectedCount,
+        targetType: action.targetType,
+        targetId: action.targetId,
+        proposalStatus: action.proposal?.status ?? null,
+      }))) as Prisma.InputJsonValue,
+    },
+  });
 }
 
 async function loadOutcomeData(userId?: string | null) {
@@ -961,4 +1059,107 @@ function clamp(value: number) {
 
 function objectJson(value: unknown): Record<string, any> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, any> : {};
+}
+
+function summaryJson(value: unknown): OutcomeCalibrationReport["summary"] {
+  const item = objectJson(value);
+  return {
+    applications: numberValue(item.applications),
+    applied: numberValue(item.applied),
+    positiveOutcomes: numberValue(item.positiveOutcomes),
+    negativeOutcomes: numberValue(item.negativeOutcomes),
+    callbackRate: nullableNumberValue(item.callbackRate),
+    rejectedHighScoreMatches: numberValue(item.rejectedHighScoreMatches),
+    duplicateActiveGroups: numberValue(item.duplicateActiveGroups),
+    resurfacedSuppressedJobs: numberValue(item.resurfacedSuppressedJobs),
+    assistantFailures: numberValue(item.assistantFailures),
+    qualityExamples: numberValue(item.qualityExamples),
+    proposedImprovements: numberValue(item.proposedImprovements),
+  };
+}
+
+function workflowsJson(value: unknown): OutcomeCalibrationReport["workflows"] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const workflow = objectJson(item);
+    const target = String(workflow.target ?? "");
+    if (!["JOB_SEARCH", "JOB_MATCHING", "RECRUITING_AGENCY", "APPLICATION_ASSISTANT"].includes(target)) return [];
+    return [{
+      target: target as AgentQualityTarget,
+      status: outcomeStatusValue(workflow.status),
+      score: nullableNumberValue(workflow.score),
+      summary: typeof workflow.summary === "string" ? workflow.summary : "",
+      metrics: objectJson(workflow.metrics) as Record<string, number | null>,
+    }];
+  });
+}
+
+function buildMetricTrends(
+  latest: OutcomeCalibrationReport["summary"] | null,
+  previous: OutcomeCalibrationReport["summary"] | null,
+): OutcomeCalibrationTrendReport["metrics"] {
+  return [
+    metricTrend("callbackRate", "Callback rate", latest?.callbackRate ?? null, previous?.callbackRate ?? null, "higher"),
+    metricTrend("rejectedHighScoreMatches", "Rejected high-score", latest?.rejectedHighScoreMatches ?? null, previous?.rejectedHighScoreMatches ?? null, "lower"),
+    metricTrend("duplicateActiveGroups", "Duplicate groups", latest?.duplicateActiveGroups ?? null, previous?.duplicateActiveGroups ?? null, "lower"),
+    metricTrend("resurfacedSuppressedJobs", "Resurfaced jobs", latest?.resurfacedSuppressedJobs ?? null, previous?.resurfacedSuppressedJobs ?? null, "lower"),
+    metricTrend("assistantFailures", "Assistant failures", latest?.assistantFailures ?? null, previous?.assistantFailures ?? null, "lower"),
+  ];
+}
+
+function buildWorkflowTrends(
+  latest: OutcomeCalibrationReport["workflows"] | null,
+  previous: OutcomeCalibrationReport["workflows"] | null,
+): OutcomeCalibrationTrendReport["workflows"] {
+  const targets: AgentQualityTarget[] = ["JOB_SEARCH", "JOB_MATCHING", "RECRUITING_AGENCY", "APPLICATION_ASSISTANT"];
+  return targets.map((target) => {
+    const latestScore = latest?.find((item) => item.target === target)?.score ?? null;
+    const previousScore = previous?.find((item) => item.target === target)?.score ?? null;
+    return {
+      target,
+      latestScore,
+      previousScore,
+      delta: latestScore === null || previousScore === null ? null : latestScore - previousScore,
+      direction: trendDirection(latestScore, previousScore, "higher"),
+    };
+  });
+}
+
+function metricTrend(
+  key: keyof OutcomeCalibrationReport["summary"],
+  label: string,
+  latest: number | null,
+  previous: number | null,
+  better: "higher" | "lower",
+): OutcomeCalibrationTrendReport["metrics"][number] {
+  return {
+    key,
+    label,
+    latest,
+    previous,
+    delta: latest === null || previous === null ? null : latest - previous,
+    direction: trendDirection(latest, previous, better),
+  };
+}
+
+function trendDirection(latest: number | null, previous: number | null, better: "higher" | "lower"): OutcomeTrendDirection {
+  if (latest === null || previous === null) return "insufficient_data";
+  const delta = latest - previous;
+  if (Math.abs(delta) < 1) return "flat";
+  if (better === "higher") return delta > 0 ? "improving" : "regressing";
+  return delta < 0 ? "improving" : "regressing";
+}
+
+function outcomeStatusValue(value: unknown): OutcomeCalibrationStatus {
+  return value === "healthy" || value === "watch" || value === "needs_review" || value === "insufficient_data"
+    ? value
+    : "insufficient_data";
+}
+
+function numberValue(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function nullableNumberValue(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }

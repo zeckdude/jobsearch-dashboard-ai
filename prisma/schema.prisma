@@ -435,6 +435,7 @@ model User {
   joleneConversations  JoleneConversation[]
   notificationLogs     NotificationLog[]
   notificationSettings NotificationSettings?
+  outcomeCalibrationSnapshots OutcomeCalibrationSnapshot[]
   outcomes             ApplicationOutcome[]
   profile              UserProfile?
   recruiterOutreach    RecruiterOutreach[]
@@ -445,6 +446,20 @@ model User {
   skillAdjustments      SkillAdjustment[]
   skillFeedback         SkillFeedback[]
   jobSuppressions       JobSuppression[]
+}
+
+model OutcomeCalibrationSnapshot {
+  id            String   @id @default(cuid())
+  userId        String
+  source        String
+  summaryJson   Json     @default("{}")
+  workflowsJson Json     @default("[]")
+  signalsJson   Json     @default("[]")
+  actionsJson   Json     @default("[]")
+  createdAt     DateTime @default(now())
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }
 
 model JoleneConversation {

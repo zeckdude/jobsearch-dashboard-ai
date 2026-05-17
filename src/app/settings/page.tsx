@@ -15,7 +15,7 @@ import { AppShell } from "@/app/app-shell";
 import { ActionButton } from "@/components/action-button";
 import { PageHeader } from "@/components/ui/page-header";
 import { getLearningImpact } from "@/lib/observability/learning-impact";
-import { getOutcomeCalibration } from "@/lib/observability/outcome-calibration";
+import { getOutcomeCalibration, getOutcomeCalibrationTrends } from "@/lib/observability/outcome-calibration";
 import { getLearningRollbackAudit } from "@/lib/observability/rollback-audit";
 import { prisma } from "@/lib/prisma";
 import { FieldMemoryDisableButton } from "./field-memory-disable-button";
@@ -124,6 +124,7 @@ export default async function SettingsPage() {
     : [0, 0, { _avg: { score: null } }, [], []] as const;
   const [qualityExampleCount, qualityFailedCount, qualityScore, qualityProposals, qualityByTarget] = quality;
   const outcomeCalibration = user ? await getOutcomeCalibration(user.id) : null;
+  const outcomeTrends = user ? await getOutcomeCalibrationTrends(user.id) : null;
   const learningImpact = user ? await getLearningImpact(user.id) : [];
   const rollbackAudit = user ? await getLearningRollbackAudit(user.id) : [];
   const nextAction = getSettingsNextAction({
@@ -320,6 +321,40 @@ export default async function SettingsPage() {
                       </Box>
                     ))}
                   </Stack>
+                  {outcomeTrends ? (
+                    <Box sx={{ borderTop: 1, borderColor: "divider", pt: 1.5 }}>
+                      <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 1 }}>
+                        <Chip size="small" color="info" label="Outcome trends" />
+                        <Chip size="small" variant="outlined" label={`${outcomeTrends.snapshots.length} snapshot${outcomeTrends.snapshots.length === 1 ? "" : "s"}`} />
+                      </Stack>
+                      <Typography variant="h4">Outcome trends</Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                        Aggregate snapshot history for outcome quality. Trends are read-only and do not change agent behavior.
+                      </Typography>
+                      <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mt: 1 }}>
+                        {outcomeTrends.metrics.map((metric) => (
+                          <Chip
+                            key={metric.key}
+                            size="small"
+                            color={outcomeTrendColor(metric.direction)}
+                            variant={metric.direction === "insufficient_data" ? "outlined" : "filled"}
+                            label={`${metric.label}: ${outcomeTrendValue(metric.latest)}${metric.delta === null ? "" : ` (${metric.delta > 0 ? "+" : ""}${metric.delta})`}`}
+                          />
+                        ))}
+                      </Stack>
+                      <Stack spacing={1.25} sx={{ mt: 1.25 }}>
+                        {outcomeTrends.workflows.map((workflow) => (
+                          <Box key={workflow.target} sx={{ borderTop: 1, borderColor: "divider", pt: 1.25 }}>
+                            <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 0.5 }}>
+                              <Chip size="small" variant="outlined" label={workflow.target.toLowerCase().replace(/_/g, " ")} />
+                              <Chip size="small" color={outcomeTrendColor(workflow.direction)} label={workflow.direction.replace(/_/g, " ")} />
+                              <Chip size="small" variant="outlined" label={`score ${outcomeTrendValue(workflow.latestScore)}${workflow.delta === null ? "" : ` (${workflow.delta > 0 ? "+" : ""}${workflow.delta})`}`} />
+                            </Stack>
+                          </Box>
+                        ))}
+                      </Stack>
+                    </Box>
+                  ) : null}
                   {outcomeCalibration.signals.length ? (
                     <Stack spacing={1.25}>
                       {outcomeCalibration.signals.map((signal) => (
@@ -991,6 +1026,17 @@ function outcomeActionProposalLabel(status?: string) {
   if (status === "ACCEPTED") return "accepted";
   if (status === "DISMISSED") return "dismissed";
   return "not promoted";
+}
+
+function outcomeTrendColor(status: string) {
+  if (status === "improving") return "success" as const;
+  if (status === "regressing") return "warning" as const;
+  if (status === "flat") return "info" as const;
+  return "default" as const;
+}
+
+function outcomeTrendValue(value: number | null) {
+  return value === null ? "n/a" : String(value);
 }
 
 function OutcomeDetailSection({ title, empty, rows }: {

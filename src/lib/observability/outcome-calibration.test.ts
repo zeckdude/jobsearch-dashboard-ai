@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getOutcomeCalibration,
+  getOutcomeCalibrationTrends,
   proposeOutcomeReviewActionImprovements,
   recomputeOutcomeCalibration,
   refreshOutcomeCalibration,
@@ -22,6 +23,7 @@ vi.mock("@/lib/prisma", () => ({
     applicationAutomationRun: { findMany: vi.fn() },
     agentQualityExample: { findMany: vi.fn(), findFirst: vi.fn(), create: vi.fn() },
     agentImprovementProposal: { findMany: vi.fn(), findFirst: vi.fn(), create: vi.fn() },
+    outcomeCalibrationSnapshot: { findMany: vi.fn(), findFirst: vi.fn(), create: vi.fn() },
   },
 }));
 
@@ -36,6 +38,9 @@ const exampleCreateMock = vi.mocked(prisma.agentQualityExample.create);
 const proposalFindManyMock = vi.mocked(prisma.agentImprovementProposal.findMany);
 const proposalFindFirstMock = vi.mocked(prisma.agentImprovementProposal.findFirst);
 const proposalCreateMock = vi.mocked(prisma.agentImprovementProposal.create);
+const snapshotFindManyMock = vi.mocked(prisma.outcomeCalibrationSnapshot.findMany);
+const snapshotFindFirstMock = vi.mocked(prisma.outcomeCalibrationSnapshot.findFirst);
+const snapshotCreateMock = vi.mocked(prisma.outcomeCalibrationSnapshot.create);
 const ensureDatasetMock = vi.mocked(ensureAgentQualityDataset);
 const proposeMock = vi.mocked(proposeImprovementsFromFailedExamples);
 
@@ -85,6 +90,9 @@ describe("outcome calibration", () => {
     proposalFindManyMock.mockResolvedValue([{ id: "proposal_1", status: "PROPOSED", metadataJson: {}, patchJson: {} }] as never);
     proposalFindFirstMock.mockResolvedValue(null);
     proposalCreateMock.mockImplementation((input) => ({ id: `proposal_${String((input as any).data.metadataJson.actionId).replace(/[^a-z0-9]/gi, "_")}` }) as never);
+    snapshotFindManyMock.mockResolvedValue([] as never);
+    snapshotFindFirstMock.mockResolvedValue(null);
+    snapshotCreateMock.mockResolvedValue({ id: "snapshot_1" } as never);
     exampleFindFirstMock.mockResolvedValue(null);
     exampleCreateMock.mockResolvedValue({ id: "created" } as never);
     ensureDatasetMock.mockResolvedValue({ id: "dataset_1" } as never);
@@ -237,6 +245,63 @@ describe("outcome calibration", () => {
     expect(proposeMock).toHaveBeenCalledWith("user_1", "JOB_SEARCH");
     expect(proposeMock).toHaveBeenCalledWith("user_1", "JOB_MATCHING");
     expect(proposeMock).toHaveBeenCalledWith("user_1", "APPLICATION_ASSISTANT");
+    expect(snapshotCreateMock).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        userId: "user_1",
+        source: "job_rejected",
+        summaryJson: expect.objectContaining({ applications: 3 }),
+      }),
+    }));
+  });
+
+  it("throttles automatic outcome snapshots", async () => {
+    snapshotFindFirstMock.mockResolvedValue({ id: "snapshot_recent" } as never);
+
+    await recomputeOutcomeCalibration("user_1", { source: "assistant_state" });
+
+    expect(snapshotFindFirstMock).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ userId: "user_1" }),
+    }));
+    expect(snapshotCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("builds outcome trend summaries from persisted snapshots", async () => {
+    snapshotFindManyMock.mockResolvedValue([
+      snapshot({
+        id: "snapshot_latest",
+        summaryJson: { callbackRate: 20, rejectedHighScoreMatches: 1, duplicateActiveGroups: 0, resurfacedSuppressedJobs: 0, assistantFailures: 1 },
+        workflowsJson: [{ target: "JOB_SEARCH", score: 90, status: "healthy", summary: "Latest", metrics: {} }],
+      }),
+      snapshot({
+        id: "snapshot_previous",
+        summaryJson: { callbackRate: 10, rejectedHighScoreMatches: 3, duplicateActiveGroups: 2, resurfacedSuppressedJobs: 1, assistantFailures: 1 },
+        workflowsJson: [{ target: "JOB_SEARCH", score: 70, status: "watch", summary: "Previous", metrics: {} }],
+      }),
+    ] as never);
+
+    const trends = await getOutcomeCalibrationTrends("user_1");
+
+    expect(trends.snapshots).toHaveLength(2);
+    expect(trends.metrics.find((metric) => metric.key === "callbackRate")).toMatchObject({
+      latest: 20,
+      previous: 10,
+      delta: 10,
+      direction: "improving",
+    });
+    expect(trends.metrics.find((metric) => metric.key === "duplicateActiveGroups")).toMatchObject({
+      direction: "improving",
+    });
+    expect(trends.metrics.find((metric) => metric.key === "assistantFailures")).toMatchObject({
+      direction: "flat",
+    });
+    expect(trends.workflows.find((workflow) => workflow.target === "JOB_SEARCH")).toMatchObject({
+      latestScore: 90,
+      previousScore: 70,
+      direction: "improving",
+    });
+    expect(trends.workflows.find((workflow) => workflow.target === "APPLICATION_ASSISTANT")).toMatchObject({
+      direction: "insufficient_data",
+    });
   });
 
   it("does not duplicate existing outcome quality examples", async () => {
@@ -405,5 +470,22 @@ function outcomeProposal(input: {
     },
     createdAt: new Date("2026-05-17T10:00:00.000Z"),
     updatedAt: new Date("2026-05-17T10:00:00.000Z"),
+  };
+}
+
+function snapshot(input: {
+  id: string;
+  summaryJson: Record<string, unknown>;
+  workflowsJson: Array<Record<string, unknown>>;
+}) {
+  return {
+    id: input.id,
+    userId: "user_1",
+    source: "settings_manual",
+    summaryJson: input.summaryJson,
+    workflowsJson: input.workflowsJson,
+    signalsJson: [],
+    actionsJson: [],
+    createdAt: new Date(input.id === "snapshot_latest" ? "2026-05-17T10:00:00.000Z" : "2026-05-16T10:00:00.000Z"),
   };
 }
