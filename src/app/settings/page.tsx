@@ -15,6 +15,7 @@ import { AppShell } from "@/app/app-shell";
 import { ActionButton } from "@/components/action-button";
 import { PageHeader } from "@/components/ui/page-header";
 import { getLearningImpact } from "@/lib/observability/learning-impact";
+import { getLearningRollbackAudit } from "@/lib/observability/rollback-audit";
 import { prisma } from "@/lib/prisma";
 import { FieldMemoryDisableButton } from "./field-memory-disable-button";
 import { SettingsClient } from "./settings-client";
@@ -122,6 +123,7 @@ export default async function SettingsPage() {
     : [0, 0, { _avg: { score: null } }, [], []] as const;
   const [qualityExampleCount, qualityFailedCount, qualityScore, qualityProposals, qualityByTarget] = quality;
   const learningImpact = user ? await getLearningImpact(user.id) : [];
+  const rollbackAudit = user ? await getLearningRollbackAudit(user.id) : [];
   const nextAction = getSettingsNextAction({
     hasUser: Boolean(user),
     aiConfigured: Boolean(process.env.OPENAI_API_KEY),
@@ -353,6 +355,45 @@ export default async function SettingsPage() {
               ) : (
                 <Typography variant="body2" color="text.secondary">No active proposal-backed learning has enough metadata to analyze yet.</Typography>
               )}
+              <Box sx={{ borderTop: 1, borderColor: "divider", pt: 1.5 }}>
+                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 1 }}>
+                  <Chip size="small" color="secondary" label="Rollback history" />
+                  <Chip size="small" variant="outlined" label={`${rollbackAudit.length} recent`} />
+                  <Chip size="small" variant="outlined" color={rollbackAudit.some((item) => item.source === "auto_learning_rollback") ? "warning" : "default"} label={`${rollbackAudit.filter((item) => item.source === "auto_learning_rollback").length} auto`} />
+                  <Chip size="small" variant="outlined" label={`${rollbackAudit.filter((item) => item.source !== "auto_learning_rollback").length} manual`} />
+                </Stack>
+                <Typography variant="h4">Rollback history</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                  Recent disabled learned rules with the reason, impact snapshot, and linked rollback review signals.
+                </Typography>
+                {rollbackAudit.length ? (
+                  <Stack spacing={1.25} sx={{ mt: 1.25 }}>
+                    {rollbackAudit.map((item) => (
+                      <Box key={item.adjustmentId} sx={{ borderTop: 1, borderColor: "divider", pt: 1.25 }}>
+                        <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 0.75 }}>
+                          <Chip size="small" label={item.skillId.replace(/_/g, " ")} />
+                          {item.category ? <Chip size="small" variant="outlined" label={item.category.replace(/_/g, " ")} /> : null}
+                          <Chip size="small" color={item.source === "auto_learning_rollback" ? "warning" : "secondary"} variant="outlined" label={item.sourceLabel} />
+                          {item.target ? <Chip size="small" variant="outlined" label={item.target.toLowerCase().replace(/_/g, " ")} /> : null}
+                          <Chip size="small" variant="outlined" label={`${item.rollbackExampleCount} rollback example${item.rollbackExampleCount === 1 ? "" : "s"}`} />
+                          <Chip size="small" variant="outlined" label={`${item.rollbackProposalCount} proposal${item.rollbackProposalCount === 1 ? "" : "s"}`} />
+                          {item.latestProposalStatus ? <Chip size="small" color={item.latestProposalStatus === "PROPOSED" ? "warning" : "default"} variant="outlined" label={item.latestProposalStatus.toLowerCase()} /> : null}
+                        </Stack>
+                        <Typography variant="body2">{item.reason ?? "No rollback reason recorded."}</Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+                          {item.disabledAt ? `Disabled ${item.disabledAt.toLocaleString()}` : `Created ${item.createdAt.toLocaleString()}`}
+                          {item.impact.status ? ` · impact ${item.impact.status.replace(/_/g, " ")}` : ""}
+                          {item.impact.appliedRunCount === null ? "" : ` · ${item.impact.appliedRunCount} applied run${item.impact.appliedRunCount === 1 ? "" : "s"}`}
+                          {item.impact.relatedFailedCount || item.impact.relatedNeedsReviewCount ? ` · ${item.impact.relatedFailedCount ?? 0} failed, ${item.impact.relatedNeedsReviewCount ?? 0} needs review` : ""}
+                          {item.impact.averageScore === null ? "" : ` · ${item.impact.averageScore} avg`}
+                        </Typography>
+                      </Box>
+                    ))}
+                  </Stack>
+                ) : (
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>No learned-rule rollbacks have been recorded yet.</Typography>
+                )}
+              </Box>
             </Stack>
           </CardContent>
         </Card>
@@ -428,7 +469,7 @@ export default async function SettingsPage() {
                         {adjustment.status === "ACTIVE" ? (
                           <ActionButton
                             postTo={`/api/skills/adjustments/${adjustment.id}/reject`}
-                            body={{ reason: "Disabled from learning audit log." }}
+                            body={{ reason: "Disabled from learning audit log.", source: "learning_audit_log" }}
                             variant="outlined"
                             color="secondary"
                             size="small"

@@ -8,6 +8,7 @@ export const runtime = "nodejs";
 
 const BodySchema = z.object({
   reason: z.string().max(500).optional(),
+  source: z.enum(["settings_learning_impact", "learning_audit_log"]).optional(),
   impact: z.object({
     status: z.string().nullable().optional(),
     appliedRunCount: z.number().nullable().optional(),
@@ -28,7 +29,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
       adjustmentId: params.id,
       userId: user.id,
       reason: body?.reason,
-      source: "settings_learning_impact",
+      source: body?.source ?? "settings_learning_impact",
       impact: body?.impact,
     });
 
