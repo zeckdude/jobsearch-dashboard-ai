@@ -24,7 +24,19 @@ describe("GET /api/observability/outcomes", () => {
       summary: { applications: 1 },
       workflows: [{ target: "JOB_SEARCH", status: "healthy", score: 100, summary: "Clean", metrics: {} }],
       signals: [],
-      actions: [{ id: "action_1", category: "repair_suppression" }],
+      actions: [{
+        id: "action_1",
+        category: "repair_suppression",
+        proposal: {
+          id: "proposal_1",
+          status: "PROPOSED",
+          riskLevel: "HIGH",
+          target: "JOB_SEARCH",
+          type: "WORKFLOW",
+          title: "Repair resurfacing",
+          activationLabel: "review_only",
+        },
+      }],
       details: { resurfacedSuppressedJobs: [{ jobId: "job_1" }] },
     } as never);
   });
@@ -38,7 +50,7 @@ describe("GET /api/observability/outcomes", () => {
       ok: true,
       summary: { applications: 1 },
       workflows: [{ target: "JOB_SEARCH" }],
-      actions: [{ id: "action_1" }],
+      actions: [{ id: "action_1", proposal: { id: "proposal_1", status: "PROPOSED" } }],
       details: { resurfacedSuppressedJobs: [{ jobId: "job_1" }] },
     });
   });

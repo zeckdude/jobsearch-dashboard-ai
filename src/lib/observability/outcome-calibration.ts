@@ -1,4 +1,4 @@
-import type { AgentQualityTarget, Prisma } from "@prisma/client";
+import type { AgentImprovementProposalStatus, AgentQualityTarget, Prisma, SkillAdjustmentRiskLevel } from "@prisma/client";
 import { sanitizeTraceInput } from "@/lib/observability/langsmith";
 import { ensureAgentQualityDataset, proposeImprovementsFromFailedExamples } from "@/lib/observability/quality";
 import { prisma } from "@/lib/prisma";
@@ -41,6 +41,17 @@ export type OutcomeCalibrationReviewAction = {
   targetType: "source" | "profile" | "job" | "duplicate_group" | "application" | "settings";
   targetId: string | null;
   href: string;
+  proposal?: {
+    id: string;
+    status: AgentImprovementProposalStatus;
+    riskLevel: SkillAdjustmentRiskLevel;
+    target: AgentQualityTarget;
+    type: string;
+    title: string;
+    activationLabel: "learning_active" | "activates_learning" | "review_only";
+    createdAt: Date;
+    updatedAt: Date;
+  } | null;
 };
 
 export type OutcomeCalibrationReport = {
@@ -170,7 +181,15 @@ export async function proposeOutcomeReviewActionImprovements(userId?: string | n
   const report = buildOutcomeCalibrationReport(data);
   let created = 0;
   let existing = 0;
-  const proposals: Array<{ id: string; actionId: string; status: "created" | "existing" }> = [];
+  const proposals: Array<{
+    id: string;
+    actionId: string;
+    status: "created" | "existing";
+    proposalStatus: AgentImprovementProposalStatus;
+    riskLevel: SkillAdjustmentRiskLevel;
+    target: AgentQualityTarget;
+    type: string;
+  }> = [];
 
   for (const action of report.actions.filter((item) => item.severity === "watch" || item.severity === "needs_review")) {
     const plan = proposalPlanForReviewAction(action);
@@ -178,7 +197,6 @@ export async function proposeOutcomeReviewActionImprovements(userId?: string | n
       where: {
         userId: ownerId,
         target: plan.target,
-        status: "PROPOSED",
         AND: [
           { metadataJson: { path: ["source"], equals: "outcome_review_action" } },
           { metadataJson: { path: ["actionCategory"], equals: action.category } },
@@ -186,11 +204,20 @@ export async function proposeOutcomeReviewActionImprovements(userId?: string | n
           { metadataJson: { path: ["targetId"], equals: action.targetId ?? action.id } },
         ],
       },
-      select: { id: true },
+      orderBy: { updatedAt: "desc" },
+      select: { id: true, status: true, riskLevel: true, target: true, type: true },
     });
     if (current) {
       existing += 1;
-      proposals.push({ id: current.id, actionId: action.id, status: "existing" });
+      proposals.push({
+        id: current.id,
+        actionId: action.id,
+        status: "existing",
+        proposalStatus: current.status,
+        riskLevel: current.riskLevel,
+        target: current.target,
+        type: current.type,
+      });
       continue;
     }
 
@@ -223,10 +250,18 @@ export async function proposeOutcomeReviewActionImprovements(userId?: string | n
           href: action.href,
         },
       },
-      select: { id: true },
+      select: { id: true, status: true, riskLevel: true, target: true, type: true },
     });
     created += 1;
-    proposals.push({ id: proposal.id, actionId: action.id, status: "created" });
+    proposals.push({
+      id: proposal.id,
+      actionId: action.id,
+      status: "created",
+      proposalStatus: proposal.status,
+      riskLevel: proposal.riskLevel,
+      target: proposal.target,
+      type: proposal.type,
+    });
   }
 
   return { scanned: report.actions.length, created, existing, proposals };
@@ -293,7 +328,7 @@ function buildOutcomeCalibrationReport(data: LoadedData): OutcomeCalibrationRepo
     workflows,
     signals: buildSignals(summary),
     details,
-    actions: buildReviewActions(details),
+    actions: linkReviewActionProposals(buildReviewActions(details), data.proposals),
   };
 }
 
@@ -494,6 +529,55 @@ function buildReviewActions(details: OutcomeCalibrationReport["details"]): Outco
   })));
 
   return actions.slice(0, 12);
+}
+
+function linkReviewActionProposals(
+  actions: OutcomeCalibrationReviewAction[],
+  proposals: LoadedData["proposals"],
+): OutcomeCalibrationReviewAction[] {
+  return actions.map((action) => {
+    const targetId = action.targetId ?? action.id;
+    const proposal = proposals.find((item) => {
+      const metadata = objectJson(item.metadataJson);
+      return metadata.source === "outcome_review_action"
+        && metadata.actionCategory === action.category
+        && metadata.targetType === action.targetType
+        && metadata.targetId === targetId;
+    });
+    if (!proposal) return { ...action, proposal: null };
+    return {
+      ...action,
+      proposal: {
+        id: proposal.id,
+        status: proposal.status,
+        riskLevel: proposal.riskLevel,
+        target: proposal.target,
+        type: proposal.type,
+        title: proposal.title,
+        activationLabel: actionProposalActivationLabel(proposal),
+        createdAt: proposal.createdAt,
+        updatedAt: proposal.updatedAt,
+      },
+    };
+  });
+}
+
+function actionProposalActivationLabel(proposal: LoadedData["proposals"][number]): "learning_active" | "activates_learning" | "review_only" {
+  const metadata = objectJson(proposal.metadataJson);
+  const activation = objectJson(metadata.activation);
+  if (activation.status === "created" || activation.status === "already_active") return "learning_active";
+  const category = String(metadata.failureCategory ?? objectJson(proposal.patchJson).category ?? "");
+  if (
+    proposal.riskLevel === "LOW"
+    && proposal.type !== "PROMPT"
+    && (
+      (proposal.target === "JOB_MATCHING" && category === "high_score_user_rejected") ||
+      (proposal.target === "JOB_SEARCH" && ["dedupe_ineffective", "low_saved_yield"].includes(category)) ||
+      (proposal.target === "APPLICATION_ASSISTANT" && ["cover_letter_field", "field_classification"].includes(category)) ||
+      (proposal.target === "RECRUITING_AGENCY" && ["CANDIDATE_FAILURE", "candidate_failure"].includes(category))
+    )
+  ) return "activates_learning";
+  return "review_only";
 }
 
 function proposalPlanForReviewAction(action: OutcomeCalibrationReviewAction): {
@@ -873,4 +957,8 @@ function percent(numerator: number, denominator: number) {
 
 function clamp(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function objectJson(value: unknown): Record<string, any> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, any> : {};
 }

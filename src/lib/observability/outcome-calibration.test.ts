@@ -82,7 +82,7 @@ describe("outcome calibration", () => {
       },
     ] as never);
     exampleFindManyMock.mockResolvedValue([{ id: "example_1" }] as never);
-    proposalFindManyMock.mockResolvedValue([{ id: "proposal_1", status: "PROPOSED" }] as never);
+    proposalFindManyMock.mockResolvedValue([{ id: "proposal_1", status: "PROPOSED", metadataJson: {}, patchJson: {} }] as never);
     proposalFindFirstMock.mockResolvedValue(null);
     proposalCreateMock.mockImplementation((input) => ({ id: `proposal_${String((input as any).data.metadataJson.actionId).replace(/[^a-z0-9]/gi, "_")}` }) as never);
     exampleFindFirstMock.mockResolvedValue(null);
@@ -157,7 +157,57 @@ describe("outcome calibration", () => {
     expect(report.actions.find((action) => action.category === "repair_suppression")).toMatchObject({
       severity: "needs_review",
       href: "/jobs/job_4",
+      proposal: null,
     });
+  });
+
+  it("links outcome review actions to proposal lifecycle metadata", async () => {
+    proposalFindManyMock.mockResolvedValue([
+      outcomeProposal({
+        id: "proposal_open",
+        status: "PROPOSED",
+        actionCategory: "repair_suppression",
+        targetType: "job",
+        targetId: "job_4",
+        category: "suppression_resurfacing",
+      }),
+      outcomeProposal({
+        id: "proposal_accepted",
+        status: "ACCEPTED",
+        actionCategory: "resolve_duplicates",
+        targetType: "duplicate_group",
+        targetId: "dup_2",
+        category: "dedupe_ineffective",
+        riskLevel: "LOW",
+        activation: { status: "created", reason: "Accepted low-risk proposal activated as skill guidance." },
+      }),
+      outcomeProposal({
+        id: "proposal_dismissed",
+        status: "DISMISSED",
+        actionCategory: "review_assistant_failures",
+        targetType: "application",
+        targetId: "app_1",
+        category: "assistant_outcome_failure",
+      }),
+    ] as never);
+
+    const report = await getOutcomeCalibration("user_1");
+
+    expect(report.actions.find((action) => action.category === "repair_suppression")?.proposal).toMatchObject({
+      id: "proposal_open",
+      status: "PROPOSED",
+      activationLabel: "review_only",
+    });
+    expect(report.actions.find((action) => action.category === "resolve_duplicates")?.proposal).toMatchObject({
+      id: "proposal_accepted",
+      status: "ACCEPTED",
+      activationLabel: "learning_active",
+    });
+    expect(report.actions.find((action) => action.category === "review_assistant_failures")?.proposal).toMatchObject({
+      id: "proposal_dismissed",
+      status: "DISMISSED",
+    });
+    expect(report.actions.find((action) => action.category === "tighten_profile")?.proposal).toBeNull();
   });
 
   it("returns no review actions for clean calibration data", async () => {
@@ -221,12 +271,18 @@ describe("outcome calibration", () => {
           category: "suppression_resurfacing",
         }),
       }),
-      select: { id: true },
+      select: expect.objectContaining({ id: true }),
     }));
   });
 
   it("does not duplicate open outcome review proposals", async () => {
-    proposalFindFirstMock.mockResolvedValue({ id: "proposal_existing" } as never);
+    proposalFindFirstMock.mockResolvedValue({
+      id: "proposal_existing",
+      status: "DISMISSED",
+      riskLevel: "HIGH",
+      target: "JOB_SEARCH",
+      type: "WORKFLOW",
+    } as never);
 
     const result = await proposeOutcomeReviewActionImprovements("user_1");
 
@@ -234,6 +290,13 @@ describe("outcome calibration", () => {
       scanned: 5,
       created: 0,
       existing: 5,
+    });
+    expect(result.proposals[0]).toMatchObject({
+      id: "proposal_existing",
+      proposalStatus: "DISMISSED",
+      riskLevel: "HIGH",
+      target: "JOB_SEARCH",
+      type: "WORKFLOW",
     });
     expect(proposalCreateMock).not.toHaveBeenCalled();
   });
@@ -308,5 +371,39 @@ function match(input: { id: string; jobPostingId: string; status: string; overal
       source: { id: "source_1", name: "Company Source", type: "company_site" },
     },
     jobSearchProfile: { id: "profile_1", name: "AI Product" },
+  };
+}
+
+function outcomeProposal(input: {
+  id: string;
+  status: string;
+  actionCategory: string;
+  targetType: string;
+  targetId: string;
+  category: string;
+  riskLevel?: string;
+  activation?: Record<string, unknown>;
+}) {
+  return {
+    id: input.id,
+    userId: "user_1",
+    target: input.actionCategory === "review_assistant_failures" ? "APPLICATION_ASSISTANT" : "JOB_SEARCH",
+    type: "WORKFLOW",
+    status: input.status,
+    riskLevel: input.riskLevel ?? "HIGH",
+    title: "Linked proposal",
+    summary: "Summary",
+    rationale: "Rationale",
+    affectedExampleIds: [],
+    patchJson: { category: input.category },
+    metadataJson: {
+      source: "outcome_review_action",
+      actionCategory: input.actionCategory,
+      targetType: input.targetType,
+      targetId: input.targetId,
+      activation: input.activation,
+    },
+    createdAt: new Date("2026-05-17T10:00:00.000Z"),
+    updatedAt: new Date("2026-05-17T10:00:00.000Z"),
   };
 }

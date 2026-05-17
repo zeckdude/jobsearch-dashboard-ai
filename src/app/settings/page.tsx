@@ -184,7 +184,7 @@ export default async function SettingsPage() {
         </Card>
         <Card id="settings-agent-quality">
           <CardContent>
-            <Stack spacing={2}>
+            <Stack spacing={2} id="settings-quality-proposals">
               <Box>
                 <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 1 }}>
                   <Chip size="small" color="primary" label="Agent quality" />
@@ -221,6 +221,7 @@ export default async function SettingsPage() {
                           <Chip size="small" color={proposal.status === "PROPOSED" ? "warning" : proposal.status === "ACCEPTED" ? "success" : "default"} label={proposal.status.toLowerCase()} />
                           <Chip size="small" variant="outlined" label={proposal.riskLevel.toLowerCase()} />
                           <Chip size="small" color={activation.activates ? "success" : "default"} variant="outlined" label={activation.label} />
+                          {isOutcomeActionProposal(proposal.metadataJson) ? <Chip size="small" color="secondary" variant="outlined" label="outcome action" /> : null}
                         </Stack>
                         <Typography variant="body2">{proposal.title}</Typography>
                         <Typography variant="caption" color="text.secondary">{proposal.summary}</Typography>
@@ -353,15 +354,27 @@ export default async function SettingsPage() {
                               <Chip size="small" color={outcomeActionSeverityColor(action.severity)} label={action.severity.replace(/_/g, " ")} />
                               <Chip size="small" variant="outlined" label={action.category.replace(/_/g, " ")} />
                               <Chip size="small" variant="outlined" label={`${action.affectedCount} affected`} />
+                              <Chip size="small" color={outcomeActionProposalColor(action.proposal?.status)} variant={action.proposal ? "filled" : "outlined"} label={outcomeActionProposalLabel(action.proposal?.status)} />
+                              {action.proposal ? <Chip size="small" variant="outlined" label={action.proposal.activationLabel.replace(/_/g, " ")} /> : null}
                             </Stack>
                             <Typography variant="body2">{action.title}</Typography>
                             <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>{action.summary}</Typography>
                             <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.25 }}>{action.rationale}</Typography>
-                            <Box sx={{ mt: 0.75 }}>
+                            {action.proposal ? (
+                              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.25 }}>
+                                Linked proposal: {action.proposal.title}
+                              </Typography>
+                            ) : null}
+                            <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mt: 0.75 }}>
                               <ActionButton href={action.href} variant="text" size="small">
                                 Open
                               </ActionButton>
-                            </Box>
+                              {action.proposal ? (
+                                <ActionButton href="#settings-quality-proposals" variant="text" size="small">
+                                  Open proposal
+                                </ActionButton>
+                              ) : null}
+                            </Stack>
                           </Box>
                         ))}
                       </Stack>
@@ -941,6 +954,11 @@ function proposalActivationLabel(proposal: {
     : { activates: false, label: "review-only", detail: "Accepting records review intent without changing agent behavior." };
 }
 
+function isOutcomeActionProposal(metadataJson: unknown) {
+  const metadata = isRecord(metadataJson) ? metadataJson : {};
+  return metadata.source === "outcome_review_action";
+}
+
 function learningImpactStatusColor(status: string) {
   if (status === "helping") return "success" as const;
   if (status === "needs_review") return "warning" as const;
@@ -959,6 +977,20 @@ function outcomeActionSeverityColor(status: string) {
   if (status === "needs_review") return "warning" as const;
   if (status === "watch") return "info" as const;
   return "default" as const;
+}
+
+function outcomeActionProposalColor(status?: string) {
+  if (status === "PROPOSED") return "warning" as const;
+  if (status === "ACCEPTED") return "success" as const;
+  if (status === "DISMISSED") return "default" as const;
+  return "default" as const;
+}
+
+function outcomeActionProposalLabel(status?: string) {
+  if (status === "PROPOSED") return "proposal open";
+  if (status === "ACCEPTED") return "accepted";
+  if (status === "DISMISSED") return "dismissed";
+  return "not promoted";
 }
 
 function OutcomeDetailSection({ title, empty, rows }: {

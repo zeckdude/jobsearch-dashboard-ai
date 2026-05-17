@@ -25,8 +25,8 @@ describe("POST /api/observability/outcomes/propose-actions", () => {
       created: 2,
       existing: 1,
       proposals: [
-        { id: "proposal_1", actionId: "source:source_1", status: "created" },
-        { id: "proposal_2", actionId: "duplicate:dup_1", status: "existing" },
+        { id: "proposal_1", actionId: "source:source_1", status: "created", proposalStatus: "PROPOSED", riskLevel: "HIGH", target: "JOB_SEARCH", type: "WORKFLOW" },
+        { id: "proposal_2", actionId: "duplicate:dup_1", status: "existing", proposalStatus: "ACCEPTED", riskLevel: "LOW", target: "JOB_SEARCH", type: "WORKFLOW" },
       ],
     } as never);
   });
@@ -42,8 +42,8 @@ describe("POST /api/observability/outcomes/propose-actions", () => {
       created: 2,
       existing: 1,
       proposals: [
-        { id: "proposal_1", actionId: "source:source_1", status: "created" },
-        { id: "proposal_2", actionId: "duplicate:dup_1", status: "existing" },
+        { id: "proposal_1", actionId: "source:source_1", status: "created", proposalStatus: "PROPOSED" },
+        { id: "proposal_2", actionId: "duplicate:dup_1", status: "existing", proposalStatus: "ACCEPTED" },
       ],
     });
   });
