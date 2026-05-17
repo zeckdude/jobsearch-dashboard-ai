@@ -2,6 +2,7 @@ import type { ApplicationAutomationRun, ApplicationAutomationRunStatus, AtsProvi
 import { existsSync, readFileSync } from "fs";
 import path from "path";
 import { langSmithTraceMetadata, traceWorkflowStep } from "@/lib/observability/langsmith";
+import { refreshOutcomeCalibration } from "@/lib/observability/outcome-calibration";
 import { createQualityExampleFromAutomationRun } from "@/lib/observability/quality";
 import { prisma } from "@/lib/prisma";
 
@@ -148,6 +149,7 @@ export async function updateApplicationAutomationRunFromLog(input: {
   }
   if (classification.status !== "RUNNING") {
     await createQualityExampleFromAutomationRun(run.id, "AUTOMATION_RUN").catch(() => null);
+    refreshOutcomeCalibration({ userId: run.userId, source: "assistant_state" });
   }
 
   return updatedRun;
@@ -330,6 +332,7 @@ async function recoverStaleAutomationRun(
     },
   });
   await createQualityExampleFromAutomationRun(run.id, "AUTOMATION_RUN").catch(() => null);
+  refreshOutcomeCalibration({ userId: run.userId, source: "assistant_state" });
 
   return updatedRun;
 }

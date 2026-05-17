@@ -275,6 +275,7 @@ async function recordOutcomeFromEmail(input: {
     outcome: input.outcome,
     notes: `Email classified as ${input.classification}: ${input.subject}`,
     occurredAt: input.occurredAt,
+    source: "email_outcome",
   });
 }
 

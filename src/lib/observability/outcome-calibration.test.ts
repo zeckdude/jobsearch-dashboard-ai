@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getOutcomeCalibration, recomputeOutcomeCalibration } from "@/lib/observability/outcome-calibration";
+import { getOutcomeCalibration, recomputeOutcomeCalibration, refreshOutcomeCalibration } from "@/lib/observability/outcome-calibration";
 import { ensureAgentQualityDataset, proposeImprovementsFromFailedExamples } from "@/lib/observability/quality";
 import { prisma } from "@/lib/prisma";
 
@@ -94,11 +94,14 @@ describe("outcome calibration", () => {
   });
 
   it("captures missing outcome signals as redacted quality examples and proposes improvements", async () => {
-    const report = await recomputeOutcomeCalibration("user_1");
+    const report = await recomputeOutcomeCalibration("user_1", { source: "job_rejected" });
 
     expect(report.createdExamples).toBe(4);
     expect(exampleCreateMock).toHaveBeenCalledTimes(4);
-    expect(exampleCreateMock.mock.calls[0]?.[0].data.metadataJson).toMatchObject({ source: "outcome_calibration" });
+    expect(exampleCreateMock.mock.calls[0]?.[0].data.metadataJson).toMatchObject({
+      source: "outcome_calibration",
+      refreshSource: "job_rejected",
+    });
     expect(proposeMock).toHaveBeenCalledWith("user_1", "JOB_SEARCH");
     expect(proposeMock).toHaveBeenCalledWith("user_1", "JOB_MATCHING");
     expect(proposeMock).toHaveBeenCalledWith("user_1", "APPLICATION_ASSISTANT");
@@ -111,6 +114,17 @@ describe("outcome calibration", () => {
 
     expect(report.createdExamples).toBe(0);
     expect(exampleCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("refreshes outcome calibration without throwing when background recompute fails", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    applicationFindManyMock.mockRejectedValueOnce(new Error("database unavailable"));
+
+    expect(() => refreshOutcomeCalibration({ userId: "user_1", source: "assistant_state" })).not.toThrow();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(warn).toHaveBeenCalledWith("Outcome calibration refresh failed.", expect.any(Error));
+    warn.mockRestore();
   });
 });
 

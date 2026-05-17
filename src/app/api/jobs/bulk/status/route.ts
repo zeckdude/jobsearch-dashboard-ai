@@ -3,6 +3,7 @@ import { z } from "zod";
 import { apiError } from "@/lib/api";
 import { captureJobRejectionLearning, rejectionReasonCodes } from "@/lib/jobs/rejection-learning";
 import { recordArchivedJobSuppression, recordRejectedJobSuppression, suppressionReason } from "@/lib/jobs/suppression";
+import { refreshOutcomeCalibration } from "@/lib/observability/outcome-calibration";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -78,6 +79,9 @@ export async function POST(request: Request) {
             reason: input.note ?? "bulk_archive",
           });
         }
+      }
+      for (const userId of Array.from(new Set(existingMatches.map((match) => match.jobSearchProfile.userId)))) {
+        refreshOutcomeCalibration({ userId, source: input.status === "rejected" ? "job_rejected" : "search_state" });
       }
     }
 

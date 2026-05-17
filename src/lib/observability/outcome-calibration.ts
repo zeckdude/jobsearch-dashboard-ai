@@ -9,6 +9,14 @@ const APPLIED_STATUSES = ["applied", "follow_up_due", "screening", "interviewing
 const POSITIVE_STATUSES = ["screening", "interviewing", "offer"] as const;
 const NEGATIVE_STATUSES = ["rejected", "rejected_by_company", "archived"] as const;
 
+export type OutcomeCalibrationRefreshSource =
+  | "settings_manual"
+  | "job_rejected"
+  | "application_outcome"
+  | "email_outcome"
+  | "assistant_state"
+  | "search_state";
+
 export type OutcomeCalibrationStatus = "healthy" | "watch" | "needs_review" | "insufficient_data";
 
 export type OutcomeCalibrationSignal = {
@@ -53,7 +61,10 @@ export async function getOutcomeCalibration(userId?: string | null): Promise<Out
   return buildOutcomeCalibrationReport(data);
 }
 
-export async function recomputeOutcomeCalibration(userId?: string | null) {
+export async function recomputeOutcomeCalibration(
+  userId?: string | null,
+  options: { source?: OutcomeCalibrationRefreshSource } = {},
+) {
   const data = await loadOutcomeData(userId);
   const report = buildOutcomeCalibrationReport(data);
   const ownerId = userId ?? data.user?.id;
@@ -61,7 +72,7 @@ export async function recomputeOutcomeCalibration(userId?: string | null) {
 
   let createdExamples = 0;
   for (const signal of report.signals.filter((item) => item.severity === "needs_review" || item.severity === "watch")) {
-    const created = await createOutcomeQualityExample(ownerId, signal, data);
+    const created = await createOutcomeQualityExample(ownerId, signal, data, options.source ?? "settings_manual");
     if (created) createdExamples += 1;
   }
 
@@ -72,6 +83,12 @@ export async function recomputeOutcomeCalibration(userId?: string | null) {
   }
 
   return { ...report, createdExamples, proposals };
+}
+
+export function refreshOutcomeCalibration(input: { userId?: string | null; source: OutcomeCalibrationRefreshSource }) {
+  void recomputeOutcomeCalibration(input.userId, { source: input.source }).catch((error) => {
+    console.warn("Outcome calibration refresh failed.", error);
+  });
 }
 
 function buildOutcomeCalibrationReport(data: LoadedData): OutcomeCalibrationReport {
@@ -213,7 +230,12 @@ async function loadOutcomeData(userId?: string | null) {
   return { user, applications, matches, suppressions, automationRuns, qualityExamples, proposals };
 }
 
-async function createOutcomeQualityExample(userId: string, signal: OutcomeCalibrationSignal, data: LoadedData) {
+async function createOutcomeQualityExample(
+  userId: string,
+  signal: OutcomeCalibrationSignal,
+  data: LoadedData,
+  refreshSource: OutcomeCalibrationRefreshSource,
+) {
   const existing = await prisma.agentQualityExample.findFirst({
     where: {
       userId,
@@ -248,6 +270,7 @@ async function createOutcomeQualityExample(userId: string, signal: OutcomeCalibr
       }),
       metadataJson: sanitizeTraceInput({
         source: OUTCOME_SIGNAL_PREFIX,
+        refreshSource,
         signalKey: signal.key,
         target: signal.target,
         category: signal.category,

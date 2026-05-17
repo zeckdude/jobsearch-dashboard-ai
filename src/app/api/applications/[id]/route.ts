@@ -3,6 +3,7 @@ import { apiError } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { recordRejectedJobSuppression } from "@/lib/jobs/suppression";
+import { refreshOutcomeCalibration } from "@/lib/observability/outcome-calibration";
 
 export const dynamic = "force-dynamic";
 
@@ -98,6 +99,7 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
       source: "apply_sprint_delete",
       reason: "Deleted from Apply Sprint as not a good fit.",
     });
+    refreshOutcomeCalibration({ userId: application.userId, source: "job_rejected" });
 
     return NextResponse.json({ deleted: true, rejected: true, message: "Application removed and job marked rejected for agency learning." });
   } catch (error) {

@@ -30,14 +30,25 @@ describe("POST /api/observability/outcomes/recompute", () => {
   });
 
   it("recomputes outcome calibration and returns captured example counts", async () => {
-    const response = await POST();
+    const response = await POST(new Request("http://localhost/api/observability/outcomes/recompute", { method: "POST" }));
 
-    expect(recomputeOutcomeCalibrationMock).toHaveBeenCalledWith("user_1");
+    expect(recomputeOutcomeCalibrationMock).toHaveBeenCalledWith("user_1", { source: "settings_manual" });
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       ok: true,
       createdExamples: 2,
       proposals: 1,
     });
+  });
+
+  it("accepts an optional refresh source", async () => {
+    const response = await POST(new Request("http://localhost/api/observability/outcomes/recompute", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ source: "assistant_state" }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(recomputeOutcomeCalibrationMock).toHaveBeenCalledWith("user_1", { source: "assistant_state" });
   });
 });

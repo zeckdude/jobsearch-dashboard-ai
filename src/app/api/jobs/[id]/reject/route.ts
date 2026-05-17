@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { apiError } from "@/lib/api";
 import { captureJobRejectionLearning, rejectionReasonCodes } from "@/lib/jobs/rejection-learning";
 import { recordRejectedJobSuppression, suppressionReason } from "@/lib/jobs/suppression";
+import { refreshOutcomeCalibration } from "@/lib/observability/outcome-calibration";
 
 export const dynamic = "force-dynamic";
 
@@ -54,6 +55,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
       source: input.source ?? "job_reject",
       reason: suppressionReason({ reasons: input.reasons, note: input.note }),
     });
+    refreshOutcomeCalibration({ userId: existing.jobSearchProfile.userId, source: "job_rejected" });
 
     return NextResponse.json({ jobId: params.id, match });
   } catch (error) {

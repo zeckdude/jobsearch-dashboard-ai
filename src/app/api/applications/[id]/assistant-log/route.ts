@@ -51,6 +51,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
           applicationId: params.id,
           outcome: "APPLIED",
           notes: "Application marked applied after gated local assistant auto-submit.",
+          source: "assistant_state",
         });
         await notifyApplicationSubmitted(params.id).catch(() => null);
       }

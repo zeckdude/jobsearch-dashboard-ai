@@ -3,6 +3,7 @@ import { syncApplicationPacket } from "@/lib/applications/application-packets";
 import { ensureInterviewPrepForApplication } from "@/lib/applications/interview-prep-workflow";
 import { submittedApplicationStatuses } from "@/lib/applications/job-filters";
 import { recordSubmittedJobSuppression } from "@/lib/jobs/suppression";
+import { refreshOutcomeCalibration, type OutcomeCalibrationRefreshSource } from "@/lib/observability/outcome-calibration";
 import { prisma } from "@/lib/prisma";
 
 export type RecordApplicationOutcomeInput = {
@@ -10,6 +11,7 @@ export type RecordApplicationOutcomeInput = {
   outcome: ApplicationOutcomeType;
   notes?: string | null;
   occurredAt?: Date;
+  source?: OutcomeCalibrationRefreshSource;
 };
 
 export async function recordApplicationOutcome(input: RecordApplicationOutcomeInput) {
@@ -101,6 +103,10 @@ export async function recordApplicationOutcome(input: RecordApplicationOutcomeIn
       source: "outcome",
     }).catch(() => null);
   }
+  refreshOutcomeCalibration({
+    userId: application.userId,
+    source: input.source ?? "application_outcome",
+  });
 
   return {
     outcome,

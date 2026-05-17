@@ -273,7 +273,7 @@ export default async function SettingsPage() {
                 </Stack>
                 <Typography variant="h3">Outcome calibration</Typography>
                 <Typography color="text.secondary" sx={{ mt: 0.75 }}>
-                  Job search, matching, agency approval, and assistant behavior are scored against real outcomes: applications, callbacks, rejections, duplicate noise, resurfacing, and failed runs.
+                  Job search, matching, agency approval, and assistant behavior are scored against real outcomes. Signals refresh after major job, application, email, and assistant events; manual recompute is available for repair or backfill.
                 </Typography>
               </Box>
               <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
@@ -284,7 +284,7 @@ export default async function SettingsPage() {
                   size="small"
                   message="Outcome calibration recomputed."
                 >
-                  Recompute outcome signals
+                  Repair outcome signals
                 </ActionButton>
               </Stack>
               {outcomeCalibration ? (
