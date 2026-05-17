@@ -98,6 +98,22 @@ export default async function SettingsPage() {
         }),
       ])
     : [[], [], []];
+  const quality = user
+    ? await Promise.all([
+        prisma.agentQualityExample.count({ where: { userId: user.id, target: "APPLICATION_ASSISTANT" } }),
+        prisma.agentQualityEvaluation.count({ where: { userId: user.id, target: "APPLICATION_ASSISTANT", status: "FAILED" } }),
+        prisma.agentQualityEvaluation.aggregate({
+          where: { userId: user.id, target: "APPLICATION_ASSISTANT" },
+          _avg: { score: true },
+        }),
+        prisma.agentImprovementProposal.findMany({
+          where: { userId: user.id, target: "APPLICATION_ASSISTANT" },
+          orderBy: [{ status: "asc" }, { createdAt: "desc" }],
+          take: 5,
+        }),
+      ])
+    : [0, 0, { _avg: { score: null } }, []] as const;
+  const [qualityExampleCount, qualityFailedCount, qualityScore, qualityProposals] = quality;
   const nextAction = getSettingsNextAction({
     hasUser: Boolean(user),
     aiConfigured: Boolean(process.env.OPENAI_API_KEY),
@@ -151,6 +167,41 @@ export default async function SettingsPage() {
               <ActionButton href={nextAction.href} variant="contained" color={nextAction.color} startIcon={nextAction.icon}>
                 {nextAction.label}
               </ActionButton>
+            </Stack>
+          </CardContent>
+        </Card>
+        <Card id="settings-agent-quality">
+          <CardContent>
+            <Stack spacing={2}>
+              <Box>
+                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 1 }}>
+                  <Chip size="small" color="primary" label="Agent quality" />
+                  <Chip size="small" variant="outlined" label={`${qualityExampleCount} examples`} />
+                  <Chip size="small" color={qualityFailedCount ? "warning" : "success"} variant="outlined" label={`${qualityFailedCount} failed evals`} />
+                  <Chip size="small" variant="outlined" label={qualityScore._avg.score === null ? "not scored" : `${Math.round(qualityScore._avg.score)} avg`} />
+                </Stack>
+                <Typography variant="h3">Application assistant evaluation loop</Typography>
+                <Typography color="text.secondary" sx={{ mt: 0.75 }}>
+                  Assistant failures, repairs, and user mistake reports become redacted quality examples. Evaluations score recurring behavior and create propose-only improvements for review.
+                </Typography>
+              </Box>
+              {qualityProposals.length ? (
+                <Stack spacing={1.25}>
+                  {qualityProposals.map((proposal) => (
+                    <Box key={proposal.id} sx={{ borderTop: 1, borderColor: "divider", pt: 1.25 }}>
+                      <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 0.75 }}>
+                        <Chip size="small" label={proposal.type.toLowerCase()} />
+                        <Chip size="small" color={proposal.status === "PROPOSED" ? "warning" : proposal.status === "ACCEPTED" ? "success" : "default"} label={proposal.status.toLowerCase()} />
+                        <Chip size="small" variant="outlined" label={proposal.riskLevel.toLowerCase()} />
+                      </Stack>
+                      <Typography variant="body2">{proposal.title}</Typography>
+                      <Typography variant="caption" color="text.secondary">{proposal.summary}</Typography>
+                    </Box>
+                  ))}
+                </Stack>
+              ) : (
+                <Typography variant="body2" color="text.secondary">No quality improvement proposals have been generated yet.</Typography>
+              )}
             </Stack>
           </CardContent>
         </Card>

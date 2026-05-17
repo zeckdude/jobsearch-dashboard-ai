@@ -134,6 +134,10 @@ This checks that key app pages render against a running local server.
 - Prefer deterministic fallbacks when provider keys are missing.
 - Avoid destructive changes without explicit user approval.
 - Keep LangGraph and LangChain imports out of generic route/module top levels. Import them lazily inside server-only workflow construction so Next.js RSC bundles for unrelated API routes do not include `@langchain/*`.
-- Treat `ApplicationAutomationRun.workflowStateJson` as the UI projection of assistant workflow state; LangGraph checkpointing is the durable graph state layer.
+- Treat `ApplicationAutomationRun.workflowStateJson` as the UI projection of assistant workflow state, and `AgentRun.workflowStateJson` as the projection for graph-backed agents such as the recruiting agency. LangGraph checkpointing is the durable graph state layer.
+- Use `AgentRun.graphThreadId`, `AgentRun.currentNode`, and `AgentRun.workflowVersion` for live agent activity and support/debug views.
+- Use Agent Board reliability controls for graph-backed run recovery. `Repair` converts stale running runs into explicit failed runs, `Retry` creates child runs through `parentRunId`, and `Cancel` records a manual terminal failure.
 - LangSmith tracing is opt-in. Configure `LANGSMITH_TRACING=true`, `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT`, optional `LANGSMITH_ENDPOINT`, and optional `LANGSMITH_TRACING_SAMPLING_RATE`.
 - Keep LangSmith payloads redacted by default. Do not trace raw resumes, cover letters, prompts, application answers, secrets, screenshots, or browser HTML unless a future privacy review explicitly changes that policy.
+- Local quality evaluations do not require LangSmith. Use `POST /api/observability/examples/backfill`, `POST /api/observability/evaluations/run`, and `GET /api/observability/evaluations` to inspect datasets, scores, and proposed improvements. The initial evaluator is application-assistant focused, and the schema now supports recruiting agency, job search, job matching, generated materials, GitHub review, outreach, outcome learning, and command center quality targets.
+- `AgentImprovementProposal` is propose-only in v1. Accepting a proposal marks review intent; it does not rewrite prompts, code, or workflow policy automatically.

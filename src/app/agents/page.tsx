@@ -1,8 +1,11 @@
 import AutoFixHighOutlinedIcon from "@mui/icons-material/AutoFixHighOutlined";
+import BuildCircleOutlinedIcon from "@mui/icons-material/BuildCircleOutlined";
 import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
 import InsightsOutlinedIcon from "@mui/icons-material/InsightsOutlined";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
+import ReplayOutlinedIcon from "@mui/icons-material/ReplayOutlined";
 import ReportProblemOutlinedIcon from "@mui/icons-material/ReportProblemOutlined";
+import StopCircleOutlinedIcon from "@mui/icons-material/StopCircleOutlined";
 import Box from "@mui/material/Box";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
@@ -21,6 +24,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { ScoreChip } from "@/components/ui/score-chip";
 import { StatusChip } from "@/components/ui/status-chip";
+import { graphRunControlState } from "@/lib/agents/graph-run-controls";
 import { jsonArray } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
 
@@ -64,7 +68,10 @@ export default async function AgentReviewBoardPage() {
     prisma.agentRun.findMany({
       orderBy: { createdAt: "desc" },
       take: 40,
-      include: { user: { select: { email: true, name: true } } },
+      include: {
+        user: { select: { email: true, name: true } },
+        events: { orderBy: { createdAt: "desc" }, take: 1 },
+      },
     }),
     prisma.candidateEvidence.findMany({
       where: { confidence: "NEEDS_REVIEW" },
@@ -317,28 +324,48 @@ export default async function AgentReviewBoardPage() {
               <TableRow>
                 <TableCell>Agent</TableCell>
                 <TableCell>Status</TableCell>
+                <TableCell>Workflow</TableCell>
                 <TableCell>Confidence</TableCell>
                 <TableCell>Summary</TableCell>
+                <TableCell>Controls</TableCell>
                 <TableCell>Created</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {runs.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5}>
+                  <TableCell colSpan={7}>
                     <EmptyState title="No agent runs yet" body="Evidence, scoring, strategy, and QA agents will log runs here." />
                   </TableCell>
                 </TableRow>
               ) : (
                 runs.map((run) => {
                   const output = outputObject(run.outputJson);
+                  const controls = graphRunControlState(run);
                   return (
                     <TableRow key={run.id} hover>
                       <TableCell>
                         <Typography sx={{ fontWeight: 850 }}>{formatAction(run.agentType)}</Typography>
                         <Typography variant="caption" color="text.secondary">{run.user?.email ?? "System"}</Typography>
+                        {run.parentRunId ? <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>Child of {run.parentRunId.slice(0, 10)}</Typography> : null}
                       </TableCell>
-                      <TableCell><StatusChip status={run.status} /></TableCell>
+                      <TableCell>
+                        <Stack spacing={0.5}>
+                          <StatusChip status={run.status} />
+                          {controls.stale ? <Chip size="small" color="warning" variant="outlined" label="stale" /> : null}
+                        </Stack>
+                      </TableCell>
+                      <TableCell sx={{ maxWidth: 220 }}>
+                        {controls.supported ? (
+                          <Stack spacing={0.5}>
+                            <Chip size="small" color="info" variant="outlined" label={workflowNodeLabel(run.currentNode)} />
+                            <Typography variant="caption" color="text.secondary">{run.workflowVersion}</Typography>
+                            <Typography variant="caption" color="text.secondary">{run.graphThreadId}</Typography>
+                          </Stack>
+                        ) : (
+                          <Typography variant="caption" color="text.secondary">Standard agent run</Typography>
+                        )}
+                      </TableCell>
                       <TableCell>
                         {typeof output?.confidence === "number" ? <ScoreChip score={Math.round(output.confidence * 100)} /> : <Chip size="small" label="n/a" />}
                       </TableCell>
@@ -346,6 +373,26 @@ export default async function AgentReviewBoardPage() {
                         <Typography variant="body2" color="text.secondary" sx={{ display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 2, overflow: "hidden" }}>
                           {agentSummary(output) || run.error || "No summary saved."}
                         </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+                          {controls.canRepair ? (
+                            <ActionButton postTo={`/api/agents/runs/${run.id}/control`} body={{ action: "repair" }} size="small" color="warning" variant="outlined" startIcon={<BuildCircleOutlinedIcon />} loadingLabel="Repairing...">
+                              Repair
+                            </ActionButton>
+                          ) : null}
+                          {controls.canRetry ? (
+                            <ActionButton postTo={`/api/agents/runs/${run.id}/control`} body={{ action: "retry" }} size="small" color="primary" variant="outlined" startIcon={<ReplayOutlinedIcon />} loadingLabel="Retrying...">
+                              Retry
+                            </ActionButton>
+                          ) : null}
+                          {controls.canCancel ? (
+                            <ActionButton postTo={`/api/agents/runs/${run.id}/control`} body={{ action: "cancel" }} size="small" color="error" variant="outlined" startIcon={<StopCircleOutlinedIcon />} loadingLabel="Cancelling...">
+                              Cancel
+                            </ActionButton>
+                          ) : null}
+                          {!controls.supported || (!controls.canRepair && !controls.canRetry && !controls.canCancel) ? <Typography variant="caption" color="text.secondary">No action</Typography> : null}
+                        </Stack>
                       </TableCell>
                       <TableCell>{run.createdAt.toLocaleString()}</TableCell>
                     </TableRow>
@@ -358,6 +405,14 @@ export default async function AgentReviewBoardPage() {
       </Stack>
     </AppShell>
   );
+}
+
+function workflowNodeLabel(value: string | null) {
+  if (!value) return "graph";
+  return value
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replaceAll("_", " ")
+    .toLowerCase();
 }
 
 function agentsNextAction({

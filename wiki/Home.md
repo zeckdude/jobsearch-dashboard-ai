@@ -28,6 +28,7 @@ The product is not a blind mass-apply bot. It is designed around verified candid
 - Email response ingestion through IMAP and OAuth foundation for Gmail/Outlook.
 - Outcome tracking and outcome-learning recommendations.
 - Local Playwright application assistant with LangGraph-backed durable workflow state and safety gates.
+- LangGraph-backed recruiting agency workflow with live `AgentRun` activity, packet-preparation state, and explicit repair/retry/cancel controls.
 - MCP server exposing app tools to local agents.
 - Chrome extension for capturing externally found jobs into the system.
 
@@ -47,9 +48,9 @@ The product is not a blind mass-apply bot. It is designed around verified candid
 
 The system can find jobs, score jobs, generate materials, prepare application packets, draft messages, monitor responses, and launch local automation. It must not silently invent career claims or submit/send externally without the configured approval rules and safety gates.
 
-LangGraph is used for the application assistant state machine where durable interrupt/resume behavior matters. It tracks browser launch, field inspection, pending field commands, user pauses, resumes, and ready-to-submit state. It does not remove the manual final-submit gate.
+LangGraph is used where durable state-machine behavior matters. The application assistant tracks browser launch, field inspection, pending field commands, user pauses, resumes, and ready-to-submit state. The recruiting agency tracks candidate discovery, approval, packet preparation, result recording, and finalization. The assistant graph does not remove the manual final-submit gate.
 
-LangSmith is available as an optional observability layer. When configured, it traces redacted metadata for agent runs, OpenAI calls, and assistant workflow steps so failures can become debuggable, repeatable learning examples without sending raw resumes, cover letters, application answers, prompts, or secrets by default.
+LangSmith is available as an optional observability layer. When configured, it traces redacted metadata for agent runs, OpenAI calls, assistant workflow steps, and recruiting agency graph runs. The app also has a local quality loop that turns application-assistant failures, recruiting agency failures, and user mistake reports into redacted examples, scores them, and creates propose-only improvement proposals without sending raw resumes, cover letters, application answers, prompts, or secrets by default.
 
 Hard rules:
 

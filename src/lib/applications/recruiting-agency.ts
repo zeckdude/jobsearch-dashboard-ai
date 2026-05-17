@@ -2,13 +2,18 @@ import { JobMatchStatus, type AgentRun, type Prisma } from "@prisma/client";
 import { applicationJobKeySet, hasApplicationForJob } from "@/lib/applications/job-filters";
 import { uniqueMatchesByCanonicalJob } from "@/lib/job-search/unique-matches";
 import { isJobSuppressed, loadJobSuppressionState } from "@/lib/jobs/suppression";
+import { langSmithTraceMetadata, traceWorkflowStep } from "@/lib/observability/langsmith";
+import { createQualityExampleFromAgentRun } from "@/lib/observability/quality";
 import { prisma } from "@/lib/prisma";
 import { runSkill } from "@/lib/skills/run-skill";
+
+const WORKFLOW_VERSION = "recruiting-agency-graph-v1";
 
 export type RecruitingAgencyRunInput = {
   minimumScore?: number;
   limit?: number;
   triggeredBy?: "manual" | "cron";
+  parentRunId?: string;
 };
 
 export type RecruitingAgencyRunResult = {
@@ -35,52 +40,199 @@ export type RecruitingAgencyRunResult = {
   message: string;
 };
 
+type AgencyCandidate = Awaited<ReturnType<typeof findAgencyCandidates>>[number];
+
+type RecruitingAgencyWorkflowState = {
+  agentRunId: string;
+  graphThreadId: string;
+  userId: string;
+  minimumScore: number;
+  limit: number;
+  triggeredBy: "manual" | "cron";
+  currentNode: string;
+  candidates: AgencyCandidate[];
+  results: RecruitingAgencyRunResult["results"];
+  output: RecruitingAgencyRunResult | null;
+  error: string | null;
+};
+
+let agencyGraphPromise: Promise<any> | null = null;
+
 export async function runRecruitingAgency(input: RecruitingAgencyRunInput = {}): Promise<RecruitingAgencyRunResult> {
   const minimumScore = input.minimumScore ?? 90;
   const limit = Math.min(Math.max(input.limit ?? 10, 1), 25);
   const triggeredBy = input.triggeredBy ?? "manual";
+  const parentRunId = input.parentRunId;
   const user = await prisma.user.findFirst({ orderBy: { createdAt: "asc" } });
 
   if (!user) throw new Error("No user exists. Run seed first.");
 
+  const graphThreadId = `recruiting-agency:${user.id}:${Date.now()}`;
+  const initialState: Omit<RecruitingAgencyWorkflowState, "agentRunId"> = {
+    graphThreadId,
+    userId: user.id,
+    minimumScore,
+    limit,
+    triggeredBy,
+    currentNode: "start",
+    candidates: [],
+    results: [],
+    output: null,
+    error: null,
+  };
   const agentRun = await prisma.agentRun.create({
     data: {
       userId: user.id,
       agentType: "RECRUITING_AGENCY",
       inputJson: toJsonValue({ minimumScore, limit, triggeredBy }),
+      observabilityJson: {
+        ...(langSmithTraceMetadata() as Record<string, unknown>),
+        graphThreadId,
+        workflowVersion: WORKFLOW_VERSION,
+      } as Prisma.InputJsonValue,
+      graphThreadId,
+      currentNode: "start",
+      workflowVersion: WORKFLOW_VERSION,
+      parentRunId,
+      workflowStateJson: toJsonValue(initialState),
       status: "RUNNING",
     },
   });
-  const results: RecruitingAgencyRunResult["results"] = [];
+  const workflowState: RecruitingAgencyWorkflowState = {
+    ...initialState,
+    agentRunId: agentRun.id,
+  };
 
   try {
-    await createAgencyRunEvent(agentRun.id, "run_started", `Recruiting agency started with a ${minimumScore}+ score threshold.`, {
-      minimumScore,
-      limit,
-      triggeredBy,
-    });
+    const finalState = await invokeRecruitingAgencyWorkflow(workflowState);
+    if (!finalState.output) throw new Error("Recruiting agency workflow completed without output.");
+    return finalState.output;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown agency failure";
+    await createAgencyRunEvent(agentRun.id, "run_failed", `Recruiting agency failed: ${message}`, { error: message }).catch(() => null);
+    await prisma.agentRun.update({
+      where: { id: agentRun.id },
+      data: {
+        status: "FAILED",
+        error: message,
+        currentNode: "run_failed",
+        workflowStateJson: toJsonValue({ ...workflowState, currentNode: "run_failed", error: message }),
+      },
+    }).catch(() => null);
+    await createQualityExampleFromAgentRun(agentRun.id, "RECRUITING_AGENCY", "WORKFLOW_FAILURE").catch(() => null);
+    throw error;
+  }
+}
 
-    const candidates = await findAgencyCandidates({ userId: user.id, minimumScore, limit });
-    await createAgencyRunEvent(agentRun.id, "candidates_found", `Found ${candidates.length} eligible agency candidate${candidates.length === 1 ? "" : "s"}.`, {
-      count: candidates.length,
-      requestedLimit: limit,
-    });
+async function invokeRecruitingAgencyWorkflow(state: RecruitingAgencyWorkflowState) {
+  if (process.env.VITEST) return runRecruitingAgencyWorkflowSequentially(state);
+  const graph = await recruitingAgencyGraph();
+  return traceWorkflowStep(
+    "recruiting-agency.workflow.run",
+    { graphThreadId: state.graphThreadId, workflowVersion: WORKFLOW_VERSION, limit: state.limit, minimumScore: state.minimumScore },
+    () => graph.invoke(state, { configurable: { thread_id: state.graphThreadId, checkpoint_ns: "" } }),
+  ) as Promise<RecruitingAgencyWorkflowState>;
+}
 
-    for (const candidate of candidates) {
+async function recruitingAgencyGraph() {
+  agencyGraphPromise ??= buildRecruitingAgencyGraph();
+  return agencyGraphPromise;
+}
+
+async function buildRecruitingAgencyGraph() {
+  const [{ Annotation, END, START, StateGraph }, { PostgresSaver }] = await Promise.all([
+    import("@langchain/langgraph"),
+    import("@langchain/langgraph-checkpoint-postgres"),
+  ]);
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) throw new Error("DATABASE_URL is required for LangGraph Postgres checkpointing.");
+  const checkpointer = PostgresSaver.fromConnString(databaseUrl);
+  await checkpointer.setup();
+
+  const AgencyAnnotation = Annotation.Root({
+    agentRunId: Annotation<string>(),
+    graphThreadId: Annotation<string>(),
+    userId: Annotation<string>(),
+    minimumScore: Annotation<number>(),
+    limit: Annotation<number>(),
+    triggeredBy: Annotation<"manual" | "cron">(),
+    currentNode: Annotation<string>(),
+    candidates: Annotation<AgencyCandidate[]>({
+      reducer: (_, right) => right,
+      default: () => [],
+    }),
+    results: Annotation<RecruitingAgencyRunResult["results"]>({
+      reducer: (_, right) => right,
+      default: () => [],
+    }),
+    output: Annotation<RecruitingAgencyRunResult | null>(),
+    error: Annotation<string | null>(),
+  });
+
+  return new StateGraph(AgencyAnnotation)
+    .addNode("loadPolicy", loadAgencyPolicyNode)
+    .addNode("findCandidates", findAgencyCandidatesNode)
+    .addNode("processCandidates", processAgencyCandidatesNode)
+    .addNode("finalizeRun", finalizeAgencyRunNode)
+    .addEdge(START, "loadPolicy")
+    .addEdge("loadPolicy", "findCandidates")
+    .addEdge("findCandidates", "processCandidates")
+    .addEdge("processCandidates", "finalizeRun")
+    .addEdge("finalizeRun", END)
+    .compile({ checkpointer });
+}
+
+async function runRecruitingAgencyWorkflowSequentially(state: RecruitingAgencyWorkflowState) {
+  let next = { ...state, ...(await loadAgencyPolicyNode(state)) };
+  next = { ...next, ...(await findAgencyCandidatesNode(next)) };
+  next = { ...next, ...(await processAgencyCandidatesNode(next)) };
+  next = { ...next, ...(await finalizeAgencyRunNode(next)) };
+  return next;
+}
+
+async function loadAgencyPolicyNode(state: RecruitingAgencyWorkflowState): Promise<Partial<RecruitingAgencyWorkflowState>> {
+  await createAgencyRunEvent(state.agentRunId, "run_started", `Recruiting agency started with a ${state.minimumScore}+ score threshold.`, {
+    minimumScore: state.minimumScore,
+    limit: state.limit,
+    triggeredBy: state.triggeredBy,
+    workflowVersion: WORKFLOW_VERSION,
+  });
+  const next = { ...state, currentNode: "loadPolicy" };
+  await persistAgencyWorkflowState(next);
+  return { currentNode: next.currentNode };
+}
+
+async function findAgencyCandidatesNode(state: RecruitingAgencyWorkflowState): Promise<Partial<RecruitingAgencyWorkflowState>> {
+  const candidates = await findAgencyCandidates({ userId: state.userId, minimumScore: state.minimumScore, limit: state.limit });
+  await createAgencyRunEvent(state.agentRunId, "candidates_found", `Found ${candidates.length} eligible agency candidate${candidates.length === 1 ? "" : "s"}.`, {
+    count: candidates.length,
+    requestedLimit: state.limit,
+  });
+  const next = { ...state, candidates, currentNode: "findCandidates" };
+  await persistAgencyWorkflowState(next);
+  return { candidates, currentNode: next.currentNode };
+}
+
+async function processAgencyCandidatesNode(state: RecruitingAgencyWorkflowState): Promise<Partial<RecruitingAgencyWorkflowState>> {
+  const results: RecruitingAgencyRunResult["results"] = [];
+  for (const candidate of state.candidates) {
     try {
       const candidatePayload = candidateEventPayload(candidate);
-      await createAgencyRunEvent(agentRun.id, "candidate_evaluating", `Evaluating ${candidate.jobPosting.company} - ${candidate.jobPosting.title}.`, candidatePayload);
+      await persistAgencyWorkflowState({ ...state, results, currentNode: "evaluateCandidate" });
+      await createAgencyRunEvent(state.agentRunId, "candidate_evaluating", `Evaluating ${candidate.jobPosting.company} - ${candidate.jobPosting.title}.`, candidatePayload);
       await runSkill({
         skillId: "approve_agency_match",
-        input: { userId: user.id, matchId: candidate.id, minimumScore },
-        userId: user.id,
+        input: { userId: state.userId, matchId: candidate.id, minimumScore: state.minimumScore },
+        userId: state.userId,
       });
-      await createAgencyRunEvent(agentRun.id, "match_approved", `Approved ${candidate.jobPosting.company} - ${candidate.jobPosting.title} at ${candidate.overallScore}.`, candidatePayload);
-      await createAgencyRunEvent(agentRun.id, "packet_started", `Preparing application packet for ${candidate.jobPosting.company}.`, candidatePayload);
+      await persistAgencyWorkflowState({ ...state, results, currentNode: "approveCandidate" });
+      await createAgencyRunEvent(state.agentRunId, "match_approved", `Approved ${candidate.jobPosting.company} - ${candidate.jobPosting.title} at ${candidate.overallScore}.`, candidatePayload);
+      await persistAgencyWorkflowState({ ...state, results, currentNode: "prepareApplicationPacket" });
+      await createAgencyRunEvent(state.agentRunId, "packet_started", `Preparing application packet for ${candidate.jobPosting.company}.`, candidatePayload);
       const prepared = await runSkill({
         skillId: "prepare_application_packet",
-        input: { jobPostingId: candidate.jobPostingId, userId: user.id },
-        userId: user.id,
+        input: { jobPostingId: candidate.jobPostingId, userId: state.userId },
+        userId: state.userId,
       });
       const output = prepared.output as { application: { id: string } };
       results.push({
@@ -92,13 +244,13 @@ export async function runRecruitingAgency(input: RecruitingAgencyRunInput = {}):
         score: candidate.overallScore,
         status: "ready_to_apply",
       });
-      await createAgencyRunEvent(agentRun.id, "packet_ready", `Packet ready for ${candidate.jobPosting.company} - ${candidate.jobPosting.title}.`, {
+      await createAgencyRunEvent(state.agentRunId, "packet_ready", `Packet ready for ${candidate.jobPosting.company} - ${candidate.jobPosting.title}.`, {
         ...candidatePayload,
         applicationId: output.application.id,
       });
     } catch (error) {
       const application = await prisma.application.findFirst({
-        where: { userId: user.id, jobPostingId: candidate.jobPostingId },
+        where: { userId: state.userId, jobPostingId: candidate.jobPostingId },
         select: { id: true },
       });
       const errorMessage = error instanceof Error ? error.message : "Unknown agency failure";
@@ -112,62 +264,59 @@ export async function runRecruitingAgency(input: RecruitingAgencyRunInput = {}):
         status: "failed",
         error: errorMessage,
       });
-      await createAgencyRunEvent(agentRun.id, "candidate_failed", `${candidate.jobPosting.company} - ${candidate.jobPosting.title} failed: ${errorMessage}`, {
+      await createAgencyRunEvent(state.agentRunId, "candidate_failed", `${candidate.jobPosting.company} - ${candidate.jobPosting.title} failed: ${errorMessage}`, {
         ...candidateEventPayload(candidate),
         applicationId: application?.id,
         error: errorMessage,
       });
     }
+    await persistAgencyWorkflowState({ ...state, results, currentNode: "recordCandidateResult" });
   }
+  return { results, currentNode: "processCandidates" };
+}
 
-  const prepared = results.filter((result) => result.status === "ready_to_apply").length;
-  const failed = results.filter((result) => result.status === "failed").length;
-  const skipped = Math.max(0, limit - results.length);
-
+async function finalizeAgencyRunNode(state: RecruitingAgencyWorkflowState): Promise<Partial<RecruitingAgencyWorkflowState>> {
+  const prepared = state.results.filter((result) => result.status === "ready_to_apply").length;
+  const failed = state.results.filter((result) => result.status === "failed").length;
+  const skipped = Math.max(0, state.limit - state.results.length);
   const output: RecruitingAgencyRunResult = {
-    agentRunId: agentRun.id,
-    requested: { minimumScore, limit, triggeredBy },
-    approved: results.length,
+    agentRunId: state.agentRunId,
+    requested: { minimumScore: state.minimumScore, limit: state.limit, triggeredBy: state.triggeredBy },
+    approved: state.results.length,
     prepared,
     failed,
     skipped,
-    results,
-    message: `Recruiting agency prepared ${prepared} application package${prepared === 1 ? "" : "s"} from ${results.length} approved match${results.length === 1 ? "" : "es"}. ${failed} failed.`,
+    results: state.results,
+    message: `Recruiting agency prepared ${prepared} application package${prepared === 1 ? "" : "s"} from ${state.results.length} approved match${state.results.length === 1 ? "" : "es"}. ${failed} failed.`,
   };
 
-    if (skipped > 0) {
-      await createAgencyRunEvent(agentRun.id, "candidate_skipped", `${skipped} requested slot${skipped === 1 ? " was" : "s were"} skipped because no eligible untracked match was available.`, {
-        skipped,
-        requestedLimit: limit,
-        processed: results.length,
-      });
-    }
-    await createAgencyRunEvent(agentRun.id, "run_completed", output.message, {
-      approved: output.approved,
-      prepared: output.prepared,
-      failed: output.failed,
-      skipped: output.skipped,
+  if (skipped > 0) {
+    await createAgencyRunEvent(state.agentRunId, "candidate_skipped", `${skipped} requested slot${skipped === 1 ? " was" : "s were"} skipped because no eligible untracked match was available.`, {
+      skipped,
+      requestedLimit: state.limit,
+      processed: state.results.length,
     });
-    await prisma.agentRun.update({
-      where: { id: agentRun.id },
-      data: {
-        status: "COMPLETED",
-        outputJson: toJsonValue(output),
-      },
-    });
-    return output;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown agency failure";
-    await createAgencyRunEvent(agentRun.id, "run_failed", `Recruiting agency failed: ${message}`, { error: message }).catch(() => null);
-    await prisma.agentRun.update({
-      where: { id: agentRun.id },
-      data: {
-        status: "FAILED",
-        error: message,
-      },
-    }).catch(() => null);
-    throw error;
   }
+  await createAgencyRunEvent(state.agentRunId, "run_completed", output.message, {
+    approved: output.approved,
+    prepared: output.prepared,
+    failed: output.failed,
+    skipped: output.skipped,
+  });
+  const next = { ...state, currentNode: "finalizeRun", output };
+  await prisma.agentRun.update({
+    where: { id: state.agentRunId },
+    data: {
+      status: "COMPLETED",
+      currentNode: "finalizeRun",
+      outputJson: toJsonValue(output),
+      workflowStateJson: toJsonValue(next),
+    },
+  });
+  if (failed > 0) {
+    await createQualityExampleFromAgentRun(state.agentRunId, "RECRUITING_AGENCY", "CANDIDATE_FAILURE").catch(() => null);
+  }
+  return { currentNode: "finalizeRun", output };
 }
 
 export async function getRecruitingAgencyRunStatus(input: { runId?: string | null } = {}) {
@@ -208,6 +357,9 @@ function serializeRecruitingAgencyRun(run: AgentRun & { events: Array<{ id: stri
     id: run.id,
     status: run.status,
     error: run.error,
+    graphThreadId: run.graphThreadId,
+    currentNode: run.currentNode,
+    workflowVersion: run.workflowVersion,
     startedAt: run.createdAt.toISOString(),
     updatedAt: run.updatedAt.toISOString(),
     totals,
@@ -249,6 +401,18 @@ async function createAgencyRunEvent(agentRunId: string, type: string, message: s
       type,
       message,
       payloadJson: toJsonValue(payload),
+    },
+  });
+}
+
+async function persistAgencyWorkflowState(state: RecruitingAgencyWorkflowState) {
+  await prisma.agentRun.update({
+    where: { id: state.agentRunId },
+    data: {
+      graphThreadId: state.graphThreadId,
+      currentNode: state.currentNode,
+      workflowVersion: WORKFLOW_VERSION,
+      workflowStateJson: toJsonValue(state),
     },
   });
 }

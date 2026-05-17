@@ -16,6 +16,9 @@ type AgencyRunStatus = {
   id: string;
   status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
   error: string | null;
+  graphThreadId: string | null;
+  currentNode: string | null;
+  workflowVersion: string | null;
   startedAt: string;
   updatedAt: string;
   totals: {
@@ -61,6 +64,7 @@ export function AgencyRunControl({
   const runIdRef = useRef<string | null>(null);
 
   const running = starting || run?.status === "RUNNING" || run?.status === "PENDING";
+  const stale = Boolean(run && running && Date.now() - new Date(run.updatedAt).getTime() > 10 * 60 * 1000);
   const meaningfulEvents = useMemo(
     () => (run?.events ?? []).filter((event) => event.type !== "run_started").slice(-8).reverse(),
     [run?.events],
@@ -121,6 +125,25 @@ export function AgencyRunControl({
     }
   }
 
+  async function controlRun(action: "repair" | "retry" | "cancel") {
+    if (!run) return;
+    setNotice("");
+    try {
+      const response = await fetch(`/api/agents/runs/${run.id}/control`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error ?? "Unable to update graph run.");
+      if (payload.childRunId) runIdRef.current = payload.childRunId;
+      await refreshStatus(payload.childRunId ?? run.id);
+      router.refresh();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Unable to update graph run.");
+    }
+  }
+
   return (
     <Stack spacing={1.5} sx={{ width: "100%" }}>
       <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ alignItems: { sm: "center" } }}>
@@ -134,6 +157,7 @@ export function AgencyRunControl({
           {running ? "Agency running..." : label}
         </Button>
         {run ? <Chip size="small" color={run.status === "FAILED" ? "error" : run.status === "COMPLETED" ? "success" : "primary"} label={run.status.toLowerCase()} /> : null}
+        {stale ? <Chip size="small" color="warning" variant="outlined" label="stale" /> : null}
         {polling && !running ? <Typography variant="caption" color="text.secondary">Refreshing activity...</Typography> : null}
       </Stack>
 
@@ -148,6 +172,11 @@ export function AgencyRunControl({
               <Typography variant="caption" color="text.secondary">
                 Started {new Date(run.startedAt).toLocaleString()} · Updated {new Date(run.updatedAt).toLocaleTimeString()}
               </Typography>
+              {run.currentNode || run.workflowVersion ? (
+                <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                  Node {workflowNodeLabel(run.currentNode)} · {run.workflowVersion ?? "graph workflow"}
+                </Typography>
+              ) : null}
             </Box>
             <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
               <MetricChip label="Found" value={run.totals.found} />
@@ -157,6 +186,23 @@ export function AgencyRunControl({
               <MetricChip label="Skipped" value={run.totals.skipped} />
               <MetricChip label="Failed" value={run.totals.failed} color={run.totals.failed > 0 ? "error" : "default"} />
             </Stack>
+            {(stale || run.status === "FAILED") ? (
+              <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
+                {stale ? (
+                  <Button size="small" color="warning" variant="outlined" onClick={() => void controlRun("repair")}>
+                    Repair stale run
+                  </Button>
+                ) : null}
+                <Button size="small" color="primary" variant="outlined" onClick={() => void controlRun("retry")}>
+                  Retry
+                </Button>
+                {stale ? (
+                  <Button size="small" color="error" variant="outlined" onClick={() => void controlRun("cancel")}>
+                    Cancel
+                  </Button>
+                ) : null}
+              </Stack>
+            ) : null}
             {run.error ? <Alert severity="error">{run.error}</Alert> : null}
             <Stack spacing={0.75}>
               {meaningfulEvents.length ? meaningfulEvents.map((event) => (
@@ -173,6 +219,14 @@ export function AgencyRunControl({
       ) : null}
     </Stack>
   );
+}
+
+function workflowNodeLabel(value: string | null) {
+  if (!value) return "graph";
+  return value
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replaceAll("_", " ")
+    .toLowerCase();
 }
 
 function MetricChip({ label, value, color = "default" }: { label: string; value: number; color?: "default" | "error" }) {

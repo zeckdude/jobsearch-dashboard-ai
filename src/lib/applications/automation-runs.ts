@@ -2,6 +2,7 @@ import type { ApplicationAutomationRun, ApplicationAutomationRunStatus, AtsProvi
 import { existsSync, readFileSync } from "fs";
 import path from "path";
 import { langSmithTraceMetadata, traceWorkflowStep } from "@/lib/observability/langsmith";
+import { createQualityExampleFromAutomationRun } from "@/lib/observability/quality";
 import { prisma } from "@/lib/prisma";
 
 type AssistantLogClassification = {
@@ -144,6 +145,9 @@ export async function updateApplicationAutomationRunFromLog(input: {
         }),
       },
     });
+  }
+  if (classification.status !== "RUNNING") {
+    await createQualityExampleFromAutomationRun(run.id, "AUTOMATION_RUN").catch(() => null);
   }
 
   return updatedRun;
@@ -325,6 +329,7 @@ async function recoverStaleAutomationRun(
       }),
     },
   });
+  await createQualityExampleFromAutomationRun(run.id, "AUTOMATION_RUN").catch(() => null);
 
   return updatedRun;
 }
@@ -401,12 +406,19 @@ export async function persistFormPatternsFromLog(input: {
 
 export function classifyAssistantLog(log: string): AssistantLogClassification {
   if (!log.trim()) return { status: "RUNNING" };
-  if (/Traceback|Unable to load assistant package|Playwright is not installed|Assistant launch failed/i.test(log)) {
-    return { status: "FAILED", blockerType: "assistant_error", blockerMessage: "The assistant run failed before completing." };
-  }
-
   if (/Manual submit (button click|confirmation) detected|Tracker updated:.*Application marked applied/i.test(log)) {
     return { status: "SUBMITTED" };
+  }
+
+  if (/Traceback|Unable to load assistant package|Playwright is not installed|Assistant launch failed/i.test(log)) {
+    if (/Review every field in the browser\. Submit manually only if everything is correct|ready_for_manual_submit/i.test(log) && /Frame was detached|Target page, context or browser has been closed|Browser has been closed/i.test(log)) {
+      return {
+        status: "NEEDS_USER",
+        blockerType: assistantClosedBlockerType,
+        blockerMessage: assistantClosedBlockerMessage,
+      };
+    }
+    return { status: "FAILED", blockerType: "assistant_error", blockerMessage: "The assistant run failed before completing." };
   }
 
   if (/Auto-submit skipped/i.test(log)) {

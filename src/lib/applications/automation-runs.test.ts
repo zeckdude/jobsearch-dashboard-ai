@@ -28,6 +28,18 @@ Tracker updated: Application marked applied.
 `)).toMatchObject({ status: "SUBMITTED" });
   });
 
+  it("does not classify detached-frame watcher failures after manual review as failed", () => {
+    expect(classifyAssistantLog(`
+Review every field in the browser. Submit manually only if everything is correct.
+ASSISTANT_EVENT {"type":"ready_for_manual_submit","message":"Assistant is waiting for manual review and submit."}
+Traceback (most recent call last):
+playwright._impl._errors.Error: Locator.count: Frame was detached
+`)).toMatchObject({
+      status: "NEEDS_USER",
+      blockerType: "assistant_closed",
+    });
+  });
+
   it("classifies skipped auto-submit as ready for manual review", () => {
     expect(classifyAssistantLog("Auto-submit skipped because a safety check did not pass.")).toMatchObject({
       status: "READY_TO_SUBMIT",

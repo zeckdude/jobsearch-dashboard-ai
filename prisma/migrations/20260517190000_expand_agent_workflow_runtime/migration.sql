@@ -1,0 +1,16 @@
+ALTER TYPE "AgentQualityTarget" ADD VALUE IF NOT EXISTS 'RECRUITING_AGENCY';
+ALTER TYPE "AgentQualityTarget" ADD VALUE IF NOT EXISTS 'JOB_SEARCH';
+ALTER TYPE "AgentQualityTarget" ADD VALUE IF NOT EXISTS 'GITHUB_REVIEW';
+ALTER TYPE "AgentQualityTarget" ADD VALUE IF NOT EXISTS 'OUTREACH';
+ALTER TYPE "AgentQualityTarget" ADD VALUE IF NOT EXISTS 'OUTCOME_LEARNING';
+ALTER TYPE "AgentQualityTarget" ADD VALUE IF NOT EXISTS 'COMMAND_CENTER';
+ALTER TYPE "AgentQualityExampleSource" ADD VALUE IF NOT EXISTS 'AGENT_RUN';
+
+ALTER TABLE "AgentRun" ADD COLUMN "graphThreadId" TEXT;
+ALTER TABLE "AgentRun" ADD COLUMN "currentNode" TEXT;
+ALTER TABLE "AgentRun" ADD COLUMN "workflowStateJson" JSONB NOT NULL DEFAULT '{}';
+ALTER TABLE "AgentRun" ADD COLUMN "workflowVersion" TEXT;
+ALTER TABLE "AgentRun" ADD COLUMN "parentRunId" TEXT;
+
+CREATE INDEX "AgentRun_graphThreadId_idx" ON "AgentRun"("graphThreadId");
+CREATE INDEX "AgentRun_parentRunId_idx" ON "AgentRun"("parentRunId");

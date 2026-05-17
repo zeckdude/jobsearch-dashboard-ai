@@ -1,5 +1,6 @@
 import { apiError } from "@/lib/api";
 import { recordApplicationOutcome } from "@/lib/applications/outcomes";
+import { createQualityExampleFromAutomationRun } from "@/lib/observability/quality";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,13 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
       applicationId: params.id,
       outcome: "APPLIED",
     });
+    const latestRun = await prisma.applicationAutomationRun.findFirst({
+      where: { applicationId: params.id },
+      orderBy: { startedAt: "desc" },
+    });
+    if (latestRun && ["FAILED", "NEEDS_USER", "RUNNING"].includes(latestRun.status)) {
+      await createQualityExampleFromAutomationRun(latestRun.id, "MANUAL_REPAIR").catch(() => null);
+    }
 
     return Response.json({ outcome: result.outcome, message: result.message });
   } catch (error) {

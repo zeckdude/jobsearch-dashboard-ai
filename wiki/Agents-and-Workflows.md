@@ -2,7 +2,7 @@
 
 The app implements agents as deterministic services with typed inputs and outputs. Agents do not randomly talk to each other. Workflows orchestrate agents in a controlled order and persist `AgentRun` records for observability.
 
-LangGraph is used selectively where durable state-machine behavior is useful. The first production use case is the application assistant workflow, where the system needs to move through states such as package validation, browser launch, field inspection, field command, user pause, resume, and ready-to-submit.
+LangGraph is used selectively where durable state-machine behavior is useful. The production graph-backed workflows are now the application assistant and the recruiting agency. The assistant uses graph state for package validation, browser launch, field inspection, field command, user pause, resume, and ready-to-submit. The recruiting agency uses graph state for candidate discovery, approval, packet preparation, result recording, and finalization.
 
 LangGraph is not used as a general replacement for every deterministic service. Most agents remain plain typed services because they are easier to test, reason about, and run synchronously.
 
@@ -14,6 +14,11 @@ LangGraph is not used as a general replacement for every deterministic service. 
 - input JSON
 - output JSON
 - observability metadata for optional LangSmith tracing
+- `graphThreadId`
+- `currentNode`
+- `workflowVersion`
+- `workflowStateJson`
+- optional `parentRunId`
 - status
 - error
 - timestamps
@@ -21,7 +26,20 @@ LangGraph is not used as a general replacement for every deterministic service. 
 
 The Agent Board shows recent runs, recommendations, warnings, and review needs.
 
+Graph-backed runs on the Agent Board also expose reliability controls when valid:
+
+- `Repair` is available for stale pending/running graph runs and marks the run failed at `stale_graph_run`.
+- `Retry` is available for failed or stale graph runs and starts a child run using `parentRunId`.
+- `Cancel` is available for pending/running graph runs and records a `manual_cancel` failure.
+- Each reliability action emits an `AgentRunEvent` and captures a redacted quality example for later review.
+
 When `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY` are configured, agent runs and AI helper calls are wrapped in LangSmith traces. The app traces redacted metadata by default: step names, model names, schema names, IDs, counts, decisions, statuses, and field labels are allowed; raw resume text, cover letters, answers, prompts, email, phone, secrets, and raw browser content are masked. LangSmith failure is non-blocking.
+
+## Agent Quality Evaluations
+
+The app has a local quality loop for turning mistakes into repeatable checks. `AgentQualityDataset` groups examples, `AgentQualityExample` stores redacted failure/success cases, `AgentQualityEvaluation` stores scored results, and `AgentImprovementProposal` stores propose-only changes for review.
+
+The first dataset is `application_assistant_autofill`. It is populated from assistant failures, browser/page-close repairs, manual submit corrections, and explicit Jolene mistake reports. Recruiting agency failures are captured under `recruiting_agency_decisions`. The schema also supports quality targets for job search, job matching, generated materials, GitHub review, outreach, outcome learning, and command center recommendations. Evaluation runs score examples and cluster repeated failure categories into proposals. V1 does not auto-apply prompt, classifier, or workflow changes.
 
 ## Implemented Agent Areas
 
@@ -98,8 +116,29 @@ Implementation notes:
 - LangGraph dependencies are imported lazily inside server-only workflow construction to avoid bundling `@langchain/*` into unrelated Next.js RSC route chunks.
 - `ApplicationAutomationRun.workflowStateJson` is the app-facing state projection used by Apply Sprint.
 - `ApplicationAutomationRun.observabilityJson` stores optional LangSmith metadata; it does not replace workflow events or agent run events.
+- Assistant failures and repairs create redacted `AgentQualityExample` records for later evaluation.
 - LangGraph checkpointing is backed by Postgres.
 - Playwright remains responsible for browser I/O; LangGraph decides workflow state and commands.
+
+## Recruiting Agency Workflow
+
+The recruiting agency workflow combines LangGraph orchestration with existing deterministic candidate filtering, duplicate suppression, and packet preparation skills.
+
+1. User or cron starts the recruiting agency.
+2. LangGraph creates a durable `AgentRun` thread and loads the approval policy.
+3. The workflow finds eligible unsuppressed matches above the configured score threshold.
+4. Each candidate is evaluated, approved when eligible, and passed to the packet-preparation skill.
+5. Candidate successes and failures are emitted as `AgentRunEvent` records for live UI activity.
+6. The workflow finalizes the run with the same result shape used by the existing agency API.
+7. Candidate-level failures create recruiting-agency quality examples so repeated issues can be reviewed.
+
+Implementation notes:
+
+- The current first pass processes candidates in a graph node while persisting explicit logical nodes such as `evaluateCandidate`, `approveCandidate`, `prepareApplicationPacket`, and `recordCandidateResult`.
+- `AgentRun.workflowStateJson` is the app-facing state projection used by the status endpoint.
+- Stale or failed agency runs can be repaired, cancelled, or retried from the Agent Board. Retry creates a child run rather than mutating the failed source run.
+- LangGraph checkpointing is backed by Postgres outside test mode.
+- The workflow preserves the same suppression and dedupe behavior as the non-graph implementation.
 
 ## Outcome Learning Workflow
 

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { recordApplicationOutcome } from "@/lib/applications/outcomes";
+import { createQualityExampleFromAutomationRun } from "@/lib/observability/quality";
 import { prisma } from "@/lib/prisma";
 import { POST } from "./route";
 
@@ -7,25 +8,37 @@ vi.mock("@/lib/applications/outcomes", () => ({
   recordApplicationOutcome: vi.fn(),
 }));
 
+vi.mock("@/lib/observability/quality", () => ({
+  createQualityExampleFromAutomationRun: vi.fn(),
+}));
+
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     applicationOutcome: {
+      findFirst: vi.fn(),
+    },
+    applicationAutomationRun: {
       findFirst: vi.fn(),
     },
   },
 }));
 
 const findOutcomeMock = vi.mocked(prisma.applicationOutcome.findFirst);
+const findAutomationRunMock = vi.mocked(prisma.applicationAutomationRun.findFirst);
 const recordApplicationOutcomeMock = vi.mocked(recordApplicationOutcome);
+const createQualityExampleMock = vi.mocked(createQualityExampleFromAutomationRun);
 
 describe("POST /api/applications/[id]/mark-applied", () => {
   beforeEach(() => {
     findOutcomeMock.mockReset();
+    findAutomationRunMock.mockReset();
     recordApplicationOutcomeMock.mockReset();
+    createQualityExampleMock.mockReset();
   });
 
   it("records an applied outcome", async () => {
     findOutcomeMock.mockResolvedValue(null);
+    findAutomationRunMock.mockResolvedValue(null);
     recordApplicationOutcomeMock.mockResolvedValue({
       outcome: { id: "outcome_1", outcome: "APPLIED" },
       status: "applied",

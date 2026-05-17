@@ -1,5 +1,6 @@
 import { Prisma, type SkillAdjustmentKind, type SkillAdjustmentRiskLevel } from "@prisma/client";
 import { sanitizeTraceInput } from "@/lib/observability/langsmith";
+import { createQualityExampleFromFeedback } from "@/lib/observability/quality";
 import { prisma } from "@/lib/prisma";
 import { skillRegistry } from "@/lib/skills/registry";
 import type { SkillId } from "@/lib/skills/types";
@@ -70,6 +71,7 @@ export async function captureSkillFeedback(input: CaptureSkillFeedbackInput): Pr
   const adjustments = proposal
     ? [await createAdjustment({ userId: input.userId, feedbackId: feedback.id, skillId, ...proposal })]
     : [];
+  await createQualityExampleFromFeedback(feedback.id).catch(() => null);
 
   return {
     feedbackId: feedback.id,

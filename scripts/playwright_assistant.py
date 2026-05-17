@@ -1961,9 +1961,9 @@ def keep_open(
                 open_manual_handoff(original_url, workdir)
                 return
             maybe_mark_manual_submit(browser, workdir, mark_applied_state)
-            maybe_report_field_learning(browser, mark_applied_state)
             if browser_was_closed_without_pages(browser, mark_applied_state):
                 return
+            maybe_report_field_learning(browser, mark_applied_state)
             time.sleep(1)
         browser.close()
         return
@@ -1975,9 +1975,9 @@ def keep_open(
                 open_manual_handoff(original_url, workdir)
                 return
             maybe_mark_manual_submit(browser, workdir, mark_applied_state)
-            maybe_report_field_learning(browser, mark_applied_state)
             if browser_was_closed_without_pages(browser, mark_applied_state):
                 return
+            maybe_report_field_learning(browser, mark_applied_state)
             time.sleep(1)
     except KeyboardInterrupt:
         browser.close()
@@ -2037,7 +2037,11 @@ def maybe_report_field_learning(browser: Any, state: dict[str, Any] | None) -> N
     candidates: list[dict[str, str]] = []
     for page in browser_pages(browser):
         for context in application_contexts(page):
-            current = snapshot_fields_in_contexts([context])
+            try:
+                current = snapshot_fields_in_contexts([context])
+            except Exception as exc:
+                print(f"Field learning snapshot skipped because the page changed: {exc}", file=sys.stderr)
+                continue
             for key, field in current.items():
                 answer = str(field.get("answer") or "").strip()
                 if not answer:
@@ -2199,6 +2203,14 @@ def browser_was_closed_without_pages(browser: Any, state: dict[str, Any] | None 
         elapsed_seconds = max(0, (time.time() * 1000 - float(submit_intent.get("at") or 0)) / 1000)
         if elapsed_seconds < 4:
             return False
+        print(f"Browser closed after manual submit click: {str(submit_intent.get('descriptor') or 'submit control')[:160]}")
+        marked = mark_application_applied(
+            str(state.get("app_url") or ""),
+            str(state.get("application_id") or ""),
+            "manual submit button click before browser close",
+        )
+        state["marked"] = marked
+        return True
     print("Assistant browser/page closed before a submission confirmation was observed.")
     return True
 

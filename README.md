@@ -83,7 +83,9 @@ PUSHOVER_APP_TOKEN=...
 
 With `OPENAI_API_KEY`, resume parsing, job scoring, and resume tailoring use OpenAI structured outputs. Without it, those flows still run through deterministic parsers/scorers so the dashboard remains usable.
 
-With `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY`, the app emits redacted metadata traces for agent runs, OpenAI helper calls, and the application assistant workflow. Tracing is optional and fail-open: if LangSmith is unavailable, the app continues without tracing. The default trace payload masks resume text, cover letters, raw application answers, prompts, secrets, emails, phone numbers, and full field values while preserving useful debugging metadata such as workflow step, field label, field type, command type, result, status, model, and counts.
+With `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY`, the app emits redacted metadata traces for agent runs, OpenAI helper calls, the application assistant workflow, and graph-backed recruiting agency runs. Tracing is optional and fail-open: if LangSmith is unavailable, the app continues without tracing. The default trace payload masks resume text, cover letters, raw application answers, prompts, secrets, emails, phone numbers, and full field values while preserving useful debugging metadata such as workflow step, field label, field type, command type, result, status, model, and counts.
+
+The app also keeps a local LangSmith-style quality loop. Assistant failures, browser-close repairs, manual submit corrections, recruiting agency candidate failures, and explicit mistake reports become redacted `AgentQualityExample` records. `/api/observability/evaluations/run` scores those examples and creates propose-only `AgentImprovementProposal` records; it never auto-applies prompt or workflow changes. Quality targets now cover the application assistant, recruiting agency, job search, job matching, generated materials, GitHub review, outreach, outcome learning, and command center recommendations.
 
 Set your GitHub profile URL in `/settings` and click `Sync GitHub context` to pull public repository context into the candidate profile. Public repos are used as project context in tailored resumes and cover letters when relevant. Add `GITHUB_TOKEN` only if you need higher GitHub API rate limits.
 
@@ -131,6 +133,7 @@ The assistant is orchestrated by a LangGraph-backed workflow plus a local Playwr
 - The Playwright runner is still the only component that controls the browser. It performs the broad safe autofill pass, reports detected fields, executes workflow commands, observes manual input, and watches for submit confirmation.
 - Workflow state is persisted in Postgres through LangGraph checkpointing and in `workflowStateJson` for app UI visibility.
 - Optional LangSmith observability stores redacted workflow traces and trace metadata on `ApplicationAutomationRun.observabilityJson`.
+- Assistant failures and repairs are captured as redacted quality examples, evaluated locally, and surfaced as propose-only improvement proposals on Settings.
 - The graph does not click final submit in the current phase. It stops at manual review and can resume after Needs Me answers for unknown fields.
 - LangGraph imports are loaded lazily inside server-only workflow construction so ordinary Next.js route bundles do not pull `@langchain/*` into unrelated RSC chunks.
 
@@ -154,6 +157,14 @@ The assistant will:
 - prepare selected application-question answers as a local text file when you have chosen an answer option in the packet review page
 - report meaningful workflow activity, detected fields, pending commands, blockers, and ready-to-submit state back to Apply Sprint
 - create Needs Me requests when a required or custom field cannot be safely answered
+
+Quality loop endpoints:
+
+```bash
+curl -X POST http://localhost:3000/api/observability/examples/backfill
+curl -X POST http://localhost:3000/api/observability/evaluations/run
+curl http://localhost:3000/api/observability/evaluations
+```
 - learn from approved/manual field answers through application field memory with sensitivity and reuse policies
 - highlight likely submit buttons and wait for your manual review
 
@@ -166,6 +177,23 @@ The assistant will not:
 - answer sensitive demographic questions automatically
 
 During autofill testing, Apply Sprint includes a reset control for the selected application. It clears assistant automation runs and open assistant blockers, stops any tracked local runner process, and lets you relaunch without rejecting the job or deleting learned memories.
+
+## Recruiting Agency Workflow
+
+The recruiting agency now runs as a LangGraph-backed workflow while preserving the existing API contract for `/api/applications/agency/run` and `/api/applications/agency/run/status`.
+
+- The graph moves through policy load, candidate discovery, candidate evaluation, approval, packet preparation, result recording, and run finalization.
+- `AgentRun` stores `graphThreadId`, `currentNode`, `workflowVersion`, and `workflowStateJson` so the UI and logs can show meaningful live activity.
+- The workflow still uses the existing suppression, duplicate, and application checks before preparing packets.
+- Candidate-level failures are captured as recruiting-agency quality examples for review and later evaluation.
+- LangGraph and LangChain imports stay lazy and server-only to avoid Next.js RSC bundling failures.
+
+Graph-backed agent runs also have explicit reliability controls on the Agent Review Board:
+
+- `Repair` marks stale running graph runs as failed with a clear `stale_graph_run` node so they can be retried safely.
+- `Retry` creates a new child `AgentRun` with `parentRunId` pointing to the failed or stale source run.
+- `Cancel` marks a pending/running graph run failed with a `manual_cancel` node and records an event.
+- Reliability actions create redacted quality examples so repeated stale, cancelled, or retry-needed runs can be reviewed later.
 
 Application-question workflow:
 
