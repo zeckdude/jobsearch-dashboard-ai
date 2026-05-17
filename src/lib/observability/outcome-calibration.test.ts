@@ -138,6 +138,32 @@ describe("outcome calibration", () => {
       sourceName: "Company Source",
       noisySignals: 1,
     });
+    expect(report.actions.map((action) => action.category)).toEqual(expect.arrayContaining([
+      "pause_or_review_source",
+      "tighten_profile",
+      "resolve_duplicates",
+      "repair_suppression",
+      "review_assistant_failures",
+    ]));
+    expect(report.actions.find((action) => action.category === "repair_suppression")).toMatchObject({
+      severity: "needs_review",
+      href: "/jobs/job_4",
+    });
+  });
+
+  it("returns no review actions for clean calibration data", async () => {
+    applicationFindManyMock.mockResolvedValue([
+      application({ id: "app_clean", status: "screening", outcomes: [{ outcome: "RECRUITER_SCREEN" }] }),
+    ] as never);
+    matchFindManyMock.mockResolvedValue([
+      match({ id: "match_clean", jobPostingId: "job_clean", status: "approved", overallScore: 82, duplicateGroupId: null }),
+    ] as never);
+    suppressionFindManyMock.mockResolvedValue([] as never);
+    automationFindManyMock.mockResolvedValue([] as never);
+
+    const report = await getOutcomeCalibration("user_1");
+
+    expect(report.actions).toEqual([]);
   });
 
   it("captures missing outcome signals as redacted quality examples and proposes improvements", async () => {

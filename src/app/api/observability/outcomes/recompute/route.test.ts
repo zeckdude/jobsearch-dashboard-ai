@@ -26,6 +26,7 @@ describe("POST /api/observability/outcomes/recompute", () => {
       summary: { applications: 4 },
       workflows: [],
       signals: [],
+      actions: [],
       details: { activeDuplicateGroups: [] },
     } as never);
   });
@@ -39,6 +40,7 @@ describe("POST /api/observability/outcomes/recompute", () => {
       ok: true,
       createdExamples: 2,
       proposals: 1,
+      actions: [],
       details: { activeDuplicateGroups: [] },
     });
   });

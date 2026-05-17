@@ -30,6 +30,19 @@ export type OutcomeCalibrationSignal = {
   examplesCreated?: number;
 };
 
+export type OutcomeCalibrationReviewAction = {
+  id: string;
+  category: "pause_or_review_source" | "tighten_profile" | "resolve_duplicates" | "repair_suppression" | "review_assistant_failures";
+  severity: "info" | "watch" | "needs_review";
+  title: string;
+  summary: string;
+  rationale: string;
+  affectedCount: number;
+  targetType: "source" | "profile" | "job" | "duplicate_group" | "application" | "settings";
+  targetId: string | null;
+  href: string;
+};
+
 export type OutcomeCalibrationReport = {
   summary: {
     applications: number;
@@ -52,6 +65,7 @@ export type OutcomeCalibrationReport = {
     metrics: Record<string, number | null>;
   }>;
   signals: OutcomeCalibrationSignal[];
+  actions: OutcomeCalibrationReviewAction[];
   details: {
     resurfacedSuppressedJobs: Array<{
       suppressionId: string;
@@ -202,12 +216,14 @@ function buildOutcomeCalibrationReport(data: LoadedData): OutcomeCalibrationRepo
       applications: applications.length,
     }),
   ];
+  const details = buildDetails(data);
 
   return {
     summary,
     workflows,
     signals: buildSignals(summary),
-    details: buildDetails(data),
+    details,
+    actions: buildReviewActions(details),
   };
 }
 
@@ -331,6 +347,83 @@ function buildDetails(data: LoadedData): OutcomeCalibrationReport["details"] {
     profileBreakdown: profileBreakdown(data),
     sourceBreakdown: sourceBreakdown(data),
   };
+}
+
+function buildReviewActions(details: OutcomeCalibrationReport["details"]): OutcomeCalibrationReviewAction[] {
+  const actions: OutcomeCalibrationReviewAction[] = [];
+
+  actions.push(...details.sourceBreakdown
+    .filter((source) => source.noisySignals >= 1 || (source.activeMatches >= 8 && (source.callbackRate ?? 0) === 0))
+    .slice(0, 3)
+    .map((source) => ({
+      id: `source:${source.sourceId ?? source.sourceName}`,
+      category: "pause_or_review_source" as const,
+      severity: source.noisySignals >= 2 ? "needs_review" as const : "watch" as const,
+      title: `Review source: ${source.sourceName}`,
+      summary: `${source.sourceName} has ${source.activeMatches} active match${source.activeMatches === 1 ? "" : "es"}, ${source.noisySignals} noisy signal${source.noisySignals === 1 ? "" : "s"}, and ${source.callbackRate === null ? "no callback data" : `${source.callbackRate}% callback`}.`,
+      rationale: "Sources with noisy matches or weak callback signal should be inspected before continuing to scale discovery from that source.",
+      affectedCount: Math.max(source.noisySignals, source.activeMatches),
+      targetType: "source" as const,
+      targetId: source.sourceId,
+      href: "/sources",
+    })));
+
+  actions.push(...details.profileBreakdown
+    .filter((profile) => profile.rejectedHighScoreMatches >= 1 || (profile.applied >= 5 && (profile.callbackRate ?? 0) === 0) || profile.activeMatches >= 15)
+    .slice(0, 3)
+    .map((profile) => ({
+      id: `profile:${profile.profileId}`,
+      category: "tighten_profile" as const,
+      severity: profile.rejectedHighScoreMatches >= 2 || (profile.applied >= 5 && (profile.callbackRate ?? 0) === 0) ? "needs_review" as const : "watch" as const,
+      title: `Tighten profile: ${profile.profileName}`,
+      summary: `${profile.profileName} has ${profile.rejectedHighScoreMatches} rejected high-score match${profile.rejectedHighScoreMatches === 1 ? "" : "es"}, ${profile.activeMatches} active match${profile.activeMatches === 1 ? "" : "es"}, and ${profile.callbackRate === null ? "no callback data" : `${profile.callbackRate}% callback`}.`,
+      rationale: "Profiles with high-score rejections, broad active volume, or no callback signal may need tighter titles, keywords, exclusions, or thresholds.",
+      affectedCount: Math.max(profile.rejectedHighScoreMatches, profile.activeMatches, profile.applied),
+      targetType: "profile" as const,
+      targetId: profile.profileId,
+      href: "/profiles",
+    })));
+
+  actions.push(...details.activeDuplicateGroups.slice(0, 3).map((group) => ({
+    id: `duplicate:${group.duplicateGroupId}`,
+    category: "resolve_duplicates" as const,
+    severity: group.activeMatchCount >= 3 ? "needs_review" as const : "watch" as const,
+    title: `Resolve duplicate group: ${group.company}`,
+    summary: `${group.activeMatchCount} active matches look like duplicates for ${group.company} - ${group.title}.`,
+    rationale: "Active duplicate groups make the review queue noisy and can cause the same role to resurface after rejection.",
+    affectedCount: group.activeMatchCount,
+    targetType: "duplicate_group" as const,
+    targetId: group.duplicateGroupId,
+    href: group.jobs[0]?.jobId ? `/jobs/${group.jobs[0].jobId}` : "/jobs",
+  })));
+
+  actions.push(...details.resurfacedSuppressedJobs.slice(0, 3).map((job) => ({
+    id: `suppression:${job.suppressionId}`,
+    category: "repair_suppression" as const,
+    severity: "needs_review" as const,
+    title: `Repair resurfacing: ${job.company}`,
+    summary: `${job.company} - ${job.title} was suppressed but appears active again as ${job.matchStatus ?? "unknown"}.`,
+    rationale: "Rejected or applied jobs should not return to active review; inspect suppression and duplicate matching for this role.",
+    affectedCount: 1,
+    targetType: "job" as const,
+    targetId: job.jobId,
+    href: job.jobId ? `/jobs/${job.jobId}` : "/jobs",
+  })));
+
+  actions.push(...details.assistantFailures.slice(0, 3).map((run) => ({
+    id: `assistant:${run.automationRunId}`,
+    category: "review_assistant_failures" as const,
+    severity: run.status === "FAILED" ? "needs_review" as const : "watch" as const,
+    title: `Review assistant run: ${run.company}`,
+    summary: `${run.company} - ${run.title} ended as ${run.status.toLowerCase().replace(/_/g, " ")}${run.blockerType ? ` with ${run.blockerType.replace(/_/g, " ")}` : ""}.`,
+    rationale: "Repeated assistant blockers reduce application throughput and should be reviewed before trusting more automation.",
+    affectedCount: 1,
+    targetType: "application" as const,
+    targetId: run.applicationId,
+    href: `/applications/${run.applicationId}`,
+  })));
+
+  return actions.slice(0, 12);
 }
 
 function resurfacedSuppressedJobDetails(data: LoadedData): OutcomeCalibrationReport["details"]["resurfacedSuppressedJobs"] {

@@ -328,6 +328,39 @@ export default async function SettingsPage() {
                     <Typography variant="body2" color="text.secondary">No bad outcome calibration signals are currently detected.</Typography>
                   )}
                   <Box sx={{ borderTop: 1, borderColor: "divider", pt: 1.5 }}>
+                    <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 1 }}>
+                      <Chip size="small" color="secondary" label="Review actions" />
+                      <Chip size="small" variant="outlined" label={`${outcomeCalibration.actions.length} recommended`} />
+                    </Stack>
+                    <Typography variant="h4">Recommended review actions</Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                      Advisory next steps based on outcome signals. These do not change sources, profiles, thresholds, suppressions, or automation.
+                    </Typography>
+                    {outcomeCalibration.actions.length ? (
+                      <Stack spacing={1.25} sx={{ mt: 1.25 }}>
+                        {outcomeCalibration.actions.map((action) => (
+                          <Box key={action.id} sx={{ borderTop: 1, borderColor: "divider", pt: 1.25 }}>
+                            <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 0.75 }}>
+                              <Chip size="small" color={outcomeActionSeverityColor(action.severity)} label={action.severity.replace(/_/g, " ")} />
+                              <Chip size="small" variant="outlined" label={action.category.replace(/_/g, " ")} />
+                              <Chip size="small" variant="outlined" label={`${action.affectedCount} affected`} />
+                            </Stack>
+                            <Typography variant="body2">{action.title}</Typography>
+                            <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>{action.summary}</Typography>
+                            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.25 }}>{action.rationale}</Typography>
+                            <Box sx={{ mt: 0.75 }}>
+                              <ActionButton href={action.href} variant="text" size="small">
+                                Open
+                              </ActionButton>
+                            </Box>
+                          </Box>
+                        ))}
+                      </Stack>
+                    ) : (
+                      <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>No outcome review actions are currently recommended.</Typography>
+                    )}
+                  </Box>
+                  <Box sx={{ borderTop: 1, borderColor: "divider", pt: 1.5 }}>
                     <Typography variant="h4">Signal drill-down</Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                       Review the jobs, profiles, sources, duplicate groups, and assistant runs behind the scorecard.
@@ -908,6 +941,12 @@ function learningImpactStatusColor(status: string) {
 
 function outcomeStatusColor(status: string) {
   if (status === "healthy") return "success" as const;
+  if (status === "needs_review") return "warning" as const;
+  if (status === "watch") return "info" as const;
+  return "default" as const;
+}
+
+function outcomeActionSeverityColor(status: string) {
   if (status === "needs_review") return "warning" as const;
   if (status === "watch") return "info" as const;
   return "default" as const;
