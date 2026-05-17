@@ -3,6 +3,7 @@ import { findReusableAnswerMemories } from "@/lib/application-answer-memory";
 import { createAgentUserRequest } from "@/lib/agent-user-requests";
 import { storeObservedFieldLearning, type ObservedApplicationField } from "@/lib/applications/field-learning";
 import { launchApplicationAssistant, type LaunchAssistantResult } from "@/lib/applications/launch-assistant";
+import { langSmithTraceMetadata, traceWorkflowStep } from "@/lib/observability/langsmith";
 import { prisma } from "@/lib/prisma";
 
 type AssistantWorkflowEvent = {
@@ -125,26 +126,30 @@ let graphPromise: Promise<any> | null = null;
 export async function startApplicationAssistantWorkflow(applicationId: string, origin: string): Promise<AssistantWorkflowStartResult> {
   const graphThreadId = `application-assistant:${applicationId}:${Date.now()}`;
   const graph = await assistantWorkflowGraph();
-  const state = await graph.invoke(
-    {
-      applicationId,
-      origin,
-      graphThreadId,
-      automationRunId: null,
-      currentNode: "start",
-      status: "RUNNING",
-      error: null,
-      fields: [],
-      pendingCommand: null,
-      pendingFieldId: null,
-      pendingUserRequestId: null,
-      filledFields: [],
-      skippedFields: [],
-      blockedFields: [],
-      observedManualFields: [],
-      events: [],
-    },
-    { configurable: { thread_id: graphThreadId, checkpoint_ns: "" } },
+  const state = await traceWorkflowStep(
+    "assistant.workflow.start",
+    { applicationId, graphThreadId, originHost: safeHost(origin) },
+    () => graph.invoke(
+      {
+        applicationId,
+        origin,
+        graphThreadId,
+        automationRunId: null,
+        currentNode: "start",
+        status: "RUNNING",
+        error: null,
+        fields: [],
+        pendingCommand: null,
+        pendingFieldId: null,
+        pendingUserRequestId: null,
+        filledFields: [],
+        skippedFields: [],
+        blockedFields: [],
+        observedManualFields: [],
+        events: [],
+      },
+      { configurable: { thread_id: graphThreadId, checkpoint_ns: "" } },
+    ),
   ) as AssistantWorkflowState;
   if (!state.automationRunId) throw new Error("Assistant workflow did not create an automation run.");
 
@@ -153,6 +158,16 @@ export async function startApplicationAssistantWorkflow(applicationId: string, o
     include: { application: true, jobPosting: true },
   });
   if (!run) throw new Error("Assistant automation run was not found after workflow launch.");
+  await prisma.applicationAutomationRun.update({
+    where: { id: run.id },
+    data: {
+      observabilityJson: {
+        ...(langSmithTraceMetadata() as Record<string, unknown>),
+        graphThreadId,
+        lastTraceStep: "assistant.workflow.start",
+      } as Prisma.InputJsonValue,
+    },
+  });
 
   return {
     ok: true,
@@ -224,7 +239,21 @@ export async function ingestApplicationAssistantWorkflowEvent(input: {
 }) {
   const run = await latestWorkflowRun(input.applicationId);
   const state = workflowStateFromRun(run);
-  const nextState = await reduceBrowserEvent(run, state, input.event);
+  const nextState = await traceWorkflowStep(
+    `assistant.event.${input.event.type}`,
+    {
+      applicationId: input.applicationId,
+      automationRunId: run.id,
+      graphThreadId: run.graphThreadId,
+      eventType: input.event.type,
+      fieldId: input.event.fieldId ?? null,
+      label: input.event.label ?? null,
+      inputType: input.event.inputType ?? null,
+      category: input.event.category ?? null,
+      fieldCount: input.event.fields?.length ?? null,
+    },
+    () => reduceBrowserEvent(run, state, input.event),
+  );
   await persistWorkflowState(run.id, nextState);
   await appendWorkflowAction(run.id, {
     type: input.event.type,
@@ -285,7 +314,18 @@ export async function recordApplicationAssistantWorkflowCommandResult(input: {
       }),
     ],
   };
-  const commandedState = await ensureNextCommand(run, nextState);
+  const commandedState = await traceWorkflowStep(
+    "assistant.command_result",
+    {
+      applicationId: input.applicationId,
+      automationRunId: run.id,
+      commandId: input.commandId,
+      commandType: state.pendingCommand?.type ?? null,
+      fieldId,
+      result: input.result,
+    },
+    () => ensureNextCommand(run, nextState),
+  );
   await persistWorkflowState(run.id, commandedState);
   return {
     workflow: serializeWorkflowStatus(await prisma.applicationAutomationRun.findUniqueOrThrow({ where: { id: run.id } })),
@@ -480,6 +520,14 @@ function workflowEvent(type: string, message: string, payload?: Record<string, u
   };
 }
 
+function safeHost(url: string) {
+  try {
+    return new URL(url).host;
+  } catch {
+    return null;
+  }
+}
+
 async function latestWorkflowRun(applicationId: string) {
   const run = await prisma.applicationAutomationRun.findFirst({
     where: { applicationId },
@@ -582,7 +630,21 @@ async function ensureNextCommand(
     };
   }
 
-  const decision = await decideCommandForField(run, field);
+  const decision = await traceWorkflowStep(
+    "assistant.command_decision",
+    {
+      applicationId: run.applicationId,
+      automationRunId: run.id,
+      graphThreadId: run.graphThreadId,
+      fieldId: field.fieldId,
+      label: field.label,
+      inputType: field.inputType,
+      category: field.category,
+      required: field.required,
+      status: field.status,
+    },
+    () => decideCommandForField(run, field),
+  );
   return {
     ...state,
     currentNode: decision.currentNode,

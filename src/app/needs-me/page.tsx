@@ -12,6 +12,7 @@ import { ActionButton } from "@/components/action-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { agentUserRequestHref, agentUserRequestTypeLabel, listOpenAgentUserRequests } from "@/lib/agent-user-requests";
+import { NeedsMeLiveRefresh } from "./needs-me-live-refresh";
 import { RequestAnswerForm } from "./request-answer-form";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +29,9 @@ export default async function NeedsMePage() {
           title="Needs Me"
           description="Questions and blockers agents cannot resolve safely on their own. Answer or dismiss these to keep workflows moving."
         />
+        <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
+          <NeedsMeLiveRefresh />
+        </Stack>
 
         <Card sx={{ borderColor: nextRequest ? "warning.main" : "success.main", bgcolor: nextRequest ? "rgba(245, 158, 11, 0.08)" : "rgba(16, 185, 129, 0.08)" }}>
           <CardContent>

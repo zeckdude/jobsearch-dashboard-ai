@@ -1,4 +1,5 @@
 import type { AgentRun, AgentType, Prisma } from "@prisma/client";
+import { langSmithTraceMetadata, sanitizeTraceInput, sanitizeTraceOutput, traceAgentOperation } from "@/lib/observability/langsmith";
 import { prisma } from "@/lib/prisma";
 
 type RunAgentInput<TInput, TOutput> = {
@@ -19,16 +20,30 @@ export async function runAgent<TInput, TOutput>({ agentType, input, userId, exec
       agentType,
       userId: userId ?? undefined,
       inputJson: toJsonValue(input),
+      observabilityJson: langSmithTraceMetadata(),
       status: "RUNNING",
     },
   });
 
   try {
-    const output = await execute(run);
+    const output = await traceAgentOperation(
+      `agent.${agentType}`,
+      {
+        agentRunId: run.id,
+        agentType,
+        userId: userId ?? null,
+        input: sanitizeTraceInput(input),
+      },
+      () => execute(run),
+    );
     const completed = await prisma.agentRun.update({
       where: { id: run.id },
       data: {
         outputJson: toJsonValue(output),
+        observabilityJson: {
+          ...(langSmithTraceMetadata() as Record<string, unknown>),
+          lastOutput: sanitizeTraceOutput(output),
+        } as Prisma.InputJsonValue,
         status: "COMPLETED",
       },
     });
@@ -40,6 +55,10 @@ export async function runAgent<TInput, TOutput>({ agentType, input, userId, exec
       data: {
         status: "FAILED",
         error: error instanceof Error ? error.message : "Unknown agent failure",
+        observabilityJson: {
+          ...(langSmithTraceMetadata() as Record<string, unknown>),
+          error: error instanceof Error ? error.message : "Unknown agent failure",
+        } as Prisma.InputJsonValue,
       },
     });
     throw error;

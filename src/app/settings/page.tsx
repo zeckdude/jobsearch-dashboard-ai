@@ -260,6 +260,12 @@ export default async function SettingsPage() {
             configured: Boolean(process.env.OPENAI_API_KEY),
             model: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
           }}
+          langSmithSettings={{
+            configured: process.env.LANGSMITH_TRACING === "true" && Boolean(process.env.LANGSMITH_API_KEY),
+            tracing: process.env.LANGSMITH_TRACING === "true",
+            project: process.env.LANGSMITH_PROJECT ?? "job-search-os-local",
+            redactionMode: "metadata",
+          }}
           emailSyncSettings={{
             configured: Boolean(process.env.JOB_EMAIL_IMAP_HOST && process.env.JOB_EMAIL_IMAP_USER && process.env.JOB_EMAIL_IMAP_PASSWORD),
             provider: "IMAP",

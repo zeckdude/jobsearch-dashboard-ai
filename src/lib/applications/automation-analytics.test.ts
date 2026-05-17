@@ -41,6 +41,7 @@ function run(atsProvider: JobPosting["atsProvider"], status: ApplicationAutomati
     actionsJson: [],
     screenshotsJson: [],
     workflowStateJson: {},
+    observabilityJson: {},
     startedAt: new Date(),
     finishedAt: null,
     createdAt: new Date(),

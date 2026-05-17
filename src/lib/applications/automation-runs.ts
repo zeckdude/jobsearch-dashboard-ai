@@ -1,6 +1,7 @@
 import type { ApplicationAutomationRun, ApplicationAutomationRunStatus, AtsProvider, Prisma } from "@prisma/client";
 import { existsSync, readFileSync } from "fs";
 import path from "path";
+import { langSmithTraceMetadata, traceWorkflowStep } from "@/lib/observability/langsmith";
 import { prisma } from "@/lib/prisma";
 
 type AssistantLogClassification = {
@@ -54,6 +55,7 @@ export async function createApplicationAutomationRun(input: {
       logPath: input.logPath ?? null,
       pid: input.pid ?? null,
       actionsJson: input.actionsJson ?? [],
+      observabilityJson: langSmithTraceMetadata(),
     },
   });
 }
@@ -96,18 +98,35 @@ export async function updateApplicationAutomationRunFromLog(input: {
     success: classification.status === "READY_TO_SUBMIT" || classification.status === "SUBMITTED",
   });
 
-  const updatedRun = await prisma.applicationAutomationRun.update({
-    where: { id: run.id },
-    data: {
-      status: classification.status,
-      ...workflowUpdateFromLog(run, classification, actions),
+  const updatedRun = await traceWorkflowStep(
+    "assistant.log_sync",
+    {
+      applicationId: run.applicationId,
+      automationRunId: run.id,
+      previousStatus: run.status,
+      nextStatus: classification.status,
       blockerType: classification.blockerType ?? null,
-      blockerMessage: classification.blockerMessage ?? null,
-      finishedAt: finished ? run.finishedAt ?? new Date() : null,
-      actionsJson: actions as Prisma.InputJsonValue,
-      screenshotsJson: screenshots as Prisma.InputJsonValue,
+      actionCount: actions.length,
+      screenshotCount: screenshots.length,
     },
-  });
+    () => prisma.applicationAutomationRun.update({
+      where: { id: run.id },
+      data: {
+        status: classification.status,
+        ...workflowUpdateFromLog(run, classification, actions),
+        blockerType: classification.blockerType ?? null,
+        blockerMessage: classification.blockerMessage ?? null,
+        finishedAt: finished ? run.finishedAt ?? new Date() : null,
+        actionsJson: actions as Prisma.InputJsonValue,
+        screenshotsJson: screenshots as Prisma.InputJsonValue,
+        observabilityJson: {
+          ...(langSmithTraceMetadata() as Record<string, unknown>),
+          lastTraceStep: "assistant.log_sync",
+          lastStatus: classification.status,
+        } as Prisma.InputJsonValue,
+      },
+    }),
+  );
 
   if (run.status !== classification.status && classification.status !== "RUNNING") {
     await prisma.applicationEvent.create({

@@ -70,6 +70,9 @@ The app works without external service keys by using deterministic local fallbac
 ```bash
 OPENAI_API_KEY=...
 OPENAI_MODEL=gpt-4.1-mini
+LANGSMITH_TRACING=false
+LANGSMITH_API_KEY=...
+LANGSMITH_PROJECT=job-search-os-local
 RESEND_API_KEY=...
 # or
 POSTMARK_SERVER_TOKEN=...
@@ -79,6 +82,8 @@ PUSHOVER_APP_TOKEN=...
 ```
 
 With `OPENAI_API_KEY`, resume parsing, job scoring, and resume tailoring use OpenAI structured outputs. Without it, those flows still run through deterministic parsers/scorers so the dashboard remains usable.
+
+With `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY`, the app emits redacted metadata traces for agent runs, OpenAI helper calls, and the application assistant workflow. Tracing is optional and fail-open: if LangSmith is unavailable, the app continues without tracing. The default trace payload masks resume text, cover letters, raw application answers, prompts, secrets, emails, phone numbers, and full field values while preserving useful debugging metadata such as workflow step, field label, field type, command type, result, status, model, and counts.
 
 Set your GitHub profile URL in `/settings` and click `Sync GitHub context` to pull public repository context into the candidate profile. Public repos are used as project context in tailored resumes and cover letters when relevant. Add `GITHUB_TOKEN` only if you need higher GitHub API rate limits.
 
@@ -125,6 +130,7 @@ The assistant is orchestrated by a LangGraph-backed workflow plus a local Playwr
 - LangGraph validates the application package, launches the browser runner, stores workflow checkpoints, and records workflow state on `ApplicationAutomationRun`.
 - The Playwright runner is still the only component that controls the browser. It performs the broad safe autofill pass, reports detected fields, executes workflow commands, observes manual input, and watches for submit confirmation.
 - Workflow state is persisted in Postgres through LangGraph checkpointing and in `workflowStateJson` for app UI visibility.
+- Optional LangSmith observability stores redacted workflow traces and trace metadata on `ApplicationAutomationRun.observabilityJson`.
 - The graph does not click final submit in the current phase. It stops at manual review and can resume after Needs Me answers for unknown fields.
 - LangGraph imports are loaded lazily inside server-only workflow construction so ordinary Next.js route bundles do not pull `@langchain/*` into unrelated RSC chunks.
 

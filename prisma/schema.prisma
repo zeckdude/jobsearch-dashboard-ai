@@ -992,6 +992,7 @@ model AgentRun {
   agentType  AgentType
   inputJson  Json
   outputJson Json?
+  observabilityJson Json     @default("{}")
   status     AgentRunStatus @default(PENDING)
   error      String?
   createdAt  DateTime       @default(now())
@@ -1137,6 +1138,7 @@ model ApplicationAutomationRun {
   actionsJson     Json                           @default("[]")
   screenshotsJson Json                           @default("[]")
   workflowStateJson Json                          @default("{}")
+  observabilityJson Json                          @default("{}")
   startedAt       DateTime                       @default(now())
   finishedAt      DateTime?
   createdAt       DateTime                       @default(now())

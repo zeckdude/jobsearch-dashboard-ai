@@ -78,6 +78,7 @@ Current graph responsibilities:
 - persist current node, events, field inventory, pending command, and counts on `ApplicationAutomationRun.workflowStateJson`
 - create or resume field-level commands when the assistant needs a known value, upload, skip, or user answer
 - stop at `READY_TO_SUBMIT` for manual review
+- emit optional redacted LangSmith traces for launch, field inventory, command decisions, command results, Needs Me resume, browser close, submit detection, and reset
 
 The Playwright runner remains the browser execution bridge. It opens the employer application URL, fills safe known fields, uploads files, reports field inventory to the workflow, polls for commands, executes fill/upload/skip commands, observes manual input, and watches for submit confirmation.
 
@@ -96,6 +97,10 @@ Memory policy:
 ### Test Reset
 
 Apply Sprint has a selected-application reset button for autofill testing. It clears assistant automation runs and open assistant blockers for that application and stops any tracked runner process. It does not reject the job, delete the application, or remove learned memories.
+
+### LangSmith Observability
+
+LangSmith tracing is optional and redacted by default. It is used to debug assistant failures such as missed cover letter fields, stale running states, unknown-field pauses, command failures, and user corrections. Trace metadata is also stored on `ApplicationAutomationRun.observabilityJson` so user-reported feedback can be connected back to the relevant assistant run.
 
 The assistant can:
 

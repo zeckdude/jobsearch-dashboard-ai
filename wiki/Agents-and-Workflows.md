@@ -13,12 +13,15 @@ LangGraph is not used as a general replacement for every deterministic service. 
 - agent type
 - input JSON
 - output JSON
+- observability metadata for optional LangSmith tracing
 - status
 - error
 - timestamps
 - user association when available
 
 The Agent Board shows recent runs, recommendations, warnings, and review needs.
+
+When `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY` are configured, agent runs and AI helper calls are wrapped in LangSmith traces. The app traces redacted metadata by default: step names, model names, schema names, IDs, counts, decisions, statuses, and field labels are allowed; raw resume text, cover letters, answers, prompts, email, phone, secrets, and raw browser content are masked. LangSmith failure is non-blocking.
 
 ## Implemented Agent Areas
 
@@ -94,6 +97,7 @@ Implementation notes:
 
 - LangGraph dependencies are imported lazily inside server-only workflow construction to avoid bundling `@langchain/*` into unrelated Next.js RSC route chunks.
 - `ApplicationAutomationRun.workflowStateJson` is the app-facing state projection used by Apply Sprint.
+- `ApplicationAutomationRun.observabilityJson` stores optional LangSmith metadata; it does not replace workflow events or agent run events.
 - LangGraph checkpointing is backed by Postgres.
 - Playwright remains responsible for browser I/O; LangGraph decides workflow state and commands.
 

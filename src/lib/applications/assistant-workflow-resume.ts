@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { storeObservedFieldLearning } from "@/lib/applications/field-learning";
+import { langSmithTraceMetadata, traceWorkflowStep } from "@/lib/observability/langsmith";
 import { prisma } from "@/lib/prisma";
 
 type AssistantWorkflowEvent = {
@@ -126,13 +127,31 @@ export async function resumeApplicationAssistantWorkflowWithRequestAnswer(input:
       }),
     ],
   };
-  await prisma.applicationAutomationRun.update({
-    where: { id: run.id },
-    data: {
-      currentNode: nextState.currentNode,
-      workflowStateJson: nextState as unknown as Prisma.InputJsonValue,
+  await traceWorkflowStep(
+    "assistant.resume_with_user_answer",
+    {
+      requestId: input.requestId,
+      applicationId: run.applicationId,
+      automationRunId: run.id,
+      graphThreadId: run.graphThreadId,
+      fieldId: field.fieldId,
+      label: field.label,
+      category: field.category,
+      inputType: field.inputType,
     },
-  });
+    () => prisma.applicationAutomationRun.update({
+      where: { id: run.id },
+      data: {
+        currentNode: nextState.currentNode,
+        workflowStateJson: nextState as unknown as Prisma.InputJsonValue,
+        observabilityJson: {
+          ...(langSmithTraceMetadata() as Record<string, unknown>),
+          lastTraceStep: "assistant.resume_with_user_answer",
+          graphThreadId: run.graphThreadId,
+        } as Prisma.InputJsonValue,
+      },
+    }),
+  );
   return nextState;
 }
 

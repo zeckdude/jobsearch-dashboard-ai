@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { apiError } from "@/lib/api";
+import { traceWorkflowStep } from "@/lib/observability/langsmith";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -21,18 +22,26 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
       }
     }
 
-    const [deletedRuns, deletedRequests] = await prisma.$transaction([
-      prisma.applicationAutomationRun.deleteMany({
-        where: { applicationId: params.id },
-      }),
-      prisma.agentUserRequest.deleteMany({
-        where: {
-          applicationId: params.id,
-          status: "OPEN",
-          type: { in: ["APPLICATION_BLOCKED", "UNKNOWN_ANSWER"] },
-        },
-      }),
-    ]);
+    const [deletedRuns, deletedRequests] = await traceWorkflowStep(
+      "assistant.reset",
+      {
+        applicationId: params.id,
+        runCount: runs.length,
+        pidCount: runs.filter((run) => run.pid).length,
+      },
+      () => prisma.$transaction([
+        prisma.applicationAutomationRun.deleteMany({
+          where: { applicationId: params.id },
+        }),
+        prisma.agentUserRequest.deleteMany({
+          where: {
+            applicationId: params.id,
+            status: "OPEN",
+            type: { in: ["APPLICATION_BLOCKED", "UNKNOWN_ANSWER"] },
+          },
+        }),
+      ]),
+    );
 
     return NextResponse.json({
       ok: true,

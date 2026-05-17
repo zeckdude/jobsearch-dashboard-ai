@@ -1,4 +1,5 @@
 import { Prisma, type SkillAdjustmentKind, type SkillAdjustmentRiskLevel } from "@prisma/client";
+import { sanitizeTraceInput } from "@/lib/observability/langsmith";
 import { prisma } from "@/lib/prisma";
 import { skillRegistry } from "@/lib/skills/registry";
 import type { SkillId } from "@/lib/skills/types";
@@ -41,6 +42,10 @@ export async function captureSkillFeedback(input: CaptureSkillFeedbackInput): Pr
   const expectedBehavior = summarizeExpectedBehavior(input.message);
   const contextIds = contextEntityIds(input.contextData);
   const proposal = proposeAdjustment({ message: input.message, skillId });
+  const observability = await relatedObservabilityContext({
+    agentRunId: contextIds.agentRunId,
+    applicationId: contextIds.applicationId,
+  });
 
   const feedback = await prisma.skillFeedback.create({
     data: {
@@ -57,6 +62,7 @@ export async function captureSkillFeedback(input: CaptureSkillFeedbackInput): Pr
         contextPath: input.contextPath,
         inferredSkill: skillRegistry[skillId].label,
         contextData: input.contextData ?? null,
+        observability,
       }),
     },
   });
@@ -195,7 +201,27 @@ function contextEntityIds(contextData: unknown) {
   return {
     applicationId: typeof application.id === "string" ? application.id : null,
     jobPostingId: typeof job.id === "string" ? job.id : typeof application.jobPostingId === "string" ? application.jobPostingId : null,
+    agentRunId: typeof data.agentRunId === "string" ? data.agentRunId : null,
   };
+}
+
+async function relatedObservabilityContext(input: { agentRunId?: string | null; applicationId?: string | null }) {
+  const [agentRun, automationRun] = await Promise.all([
+    input.agentRunId
+      ? prisma.agentRun.findUnique({
+          where: { id: input.agentRunId },
+          select: { id: true, agentType: true, observabilityJson: true },
+        })
+      : null,
+    input.applicationId
+      ? prisma.applicationAutomationRun.findFirst({
+          where: { applicationId: input.applicationId },
+          select: { id: true, graphThreadId: true, currentNode: true, status: true, observabilityJson: true },
+          orderBy: { startedAt: "desc" },
+        })
+      : null,
+  ]);
+  return sanitizeTraceInput({ agentRun, automationRun });
 }
 
 function toJsonInput(value: unknown): Prisma.InputJsonValue {

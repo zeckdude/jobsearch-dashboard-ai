@@ -38,6 +38,12 @@ type SettingsClientProps = {
     configured: boolean;
     model: string;
   };
+  langSmithSettings: {
+    configured: boolean;
+    tracing: boolean;
+    project: string;
+    redactionMode: string;
+  };
   emailSyncSettings: {
     configured: boolean;
     provider: string;
@@ -123,7 +129,7 @@ type SettingsClientProps = {
   }>;
 };
 
-export function SettingsClient({ initialSettings, aiSettings, emailSyncSettings, sourceSettings, profileSettings, latestGithubReview, cronSettings, automationSettings, companyAutomationPolicies: initialCompanyAutomationPolicies }: SettingsClientProps) {
+export function SettingsClient({ initialSettings, aiSettings, langSmithSettings, emailSyncSettings, sourceSettings, profileSettings, latestGithubReview, cronSettings, automationSettings, companyAutomationPolicies: initialCompanyAutomationPolicies }: SettingsClientProps) {
   const [settings, setSettings] = useState(initialSettings);
   const [profile, setProfile] = useState(profileSettings);
   const [cron, setCron] = useState(cronSettings);
@@ -382,6 +388,15 @@ export function SettingsClient({ initialSettings, aiSettings, emailSyncSettings,
             <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)" }, gap: 2 }}>
               <TextField fullWidth label="Environment variable" value="OPENAI_API_KEY" disabled />
               <TextField fullWidth label="Model" value={aiSettings.model} disabled />
+            </Box>
+            <Alert severity={langSmithSettings.configured ? "success" : "info"}>
+              {langSmithSettings.configured
+                ? `LangSmith tracing is enabled for ${langSmithSettings.project} with ${langSmithSettings.redactionMode} redaction.`
+                : "LangSmith tracing is optional. Set LANGSMITH_TRACING=true and LANGSMITH_API_KEY to trace redacted agent metadata."}
+            </Alert>
+            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)" }, gap: 2 }}>
+              <TextField fullWidth label="LangSmith tracing" value={langSmithSettings.tracing ? "enabled" : "disabled"} disabled />
+              <TextField fullWidth label="LangSmith project" value={langSmithSettings.project} disabled />
             </Box>
           </Stack>
         </CardContent>

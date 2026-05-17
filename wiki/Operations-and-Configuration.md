@@ -135,3 +135,5 @@ This checks that key app pages render against a running local server.
 - Avoid destructive changes without explicit user approval.
 - Keep LangGraph and LangChain imports out of generic route/module top levels. Import them lazily inside server-only workflow construction so Next.js RSC bundles for unrelated API routes do not include `@langchain/*`.
 - Treat `ApplicationAutomationRun.workflowStateJson` as the UI projection of assistant workflow state; LangGraph checkpointing is the durable graph state layer.
+- LangSmith tracing is opt-in. Configure `LANGSMITH_TRACING=true`, `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT`, optional `LANGSMITH_ENDPOINT`, and optional `LANGSMITH_TRACING_SAMPLING_RATE`.
+- Keep LangSmith payloads redacted by default. Do not trace raw resumes, cover letters, prompts, application answers, secrets, screenshots, or browser HTML unless a future privacy review explicitly changes that policy.

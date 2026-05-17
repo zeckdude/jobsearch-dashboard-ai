@@ -49,6 +49,8 @@ The system can find jobs, score jobs, generate materials, prepare application pa
 
 LangGraph is used for the application assistant state machine where durable interrupt/resume behavior matters. It tracks browser launch, field inspection, pending field commands, user pauses, resumes, and ready-to-submit state. It does not remove the manual final-submit gate.
 
+LangSmith is available as an optional observability layer. When configured, it traces redacted metadata for agent runs, OpenAI calls, and assistant workflow steps so failures can become debuggable, repeatable learning examples without sending raw resumes, cover letters, application answers, prompts, or secrets by default.
+
 Hard rules:
 
 - Generated materials must be grounded in approved candidate evidence.
