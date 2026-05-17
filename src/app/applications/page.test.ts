@@ -10,4 +10,13 @@ describe("/applications page agency workflow", () => {
     expect(pageSource).toContain("/api/applications/agency/run");
     expect(pageSource).not.toContain("ApplicationCreateForm");
   });
+
+  it("prompts for rejection feedback from the applications board", () => {
+    const buttonSource = readFileSync(fileURLToPath(new URL("./application-delete-button.tsx", import.meta.url)), "utf8");
+
+    expect(buttonSource).toContain("RejectionReasonDialog");
+    expect(buttonSource).toContain("applications_rejection_reason_prompt");
+    expect(buttonSource).toContain("onSkip={() => remove([], \"\")}");
+    expect(buttonSource).not.toContain("window.confirm");
+  });
 });

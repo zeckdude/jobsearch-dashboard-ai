@@ -4,13 +4,15 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { recordRejectedJobSuppression } from "@/lib/jobs/suppression";
 import { refreshOutcomeCalibration } from "@/lib/observability/outcome-calibration";
+import { captureJobRejectionLearning, rejectionReasonCodes, type RejectionReasonCode } from "@/lib/jobs/rejection-learning";
 
 export const dynamic = "force-dynamic";
 
 const deletableStatuses = new Set(["approved", "ready_to_apply"]);
 
-export async function DELETE(_: Request, { params }: { params: { id: string } }) {
+export async function DELETE(request: Request, { params }: { params: { id: string } }) {
   try {
+    const input = await parseDeleteInput(request);
     const application = await prisma.application.findUnique({
       where: { id: params.id },
       select: {
@@ -42,7 +44,9 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
       );
     }
 
-    const feedbackMessage = `Deleted from Apply Sprint as not a good fit: ${application.jobPosting.company} - ${application.jobPosting.title}. The recruiting agency should remember this as a rejected agency-approved match.`;
+    const reasonText = input.reasons.length ? input.reasons.map((reason) => reason.replace(/_/g, " ")).join(", ") : "No reason provided";
+    const noteText = input.note ? ` User note: ${input.note}` : "";
+    const feedbackMessage = `Deleted from Apply Sprint as not a good fit: ${application.jobPosting.company} - ${application.jobPosting.title}. Reason: ${reasonText}.${noteText} The recruiting agency should remember this as a rejected agency-approved match.`;
     await prisma.$transaction([
       prisma.skillFeedback.create({
         data: {
@@ -58,8 +62,10 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
             contextPath: "/applications/assistant",
             deletedApplicationId: application.id,
             jobProfileMatchId: application.jobProfileMatchId,
+            reasons: input.reasons,
+            note: input.note,
             job: application.jobPosting,
-            source: "apply_sprint_delete",
+            source: input.source,
           } as Prisma.InputJsonValue,
           adjustments: {
             create: {
@@ -69,8 +75,8 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
               riskLevel: "LOW",
               status: "ACTIVE",
               patchJson: {
-                guidance: "A user deleted an agency-approved Apply Sprint item because the job was not a good fit. Treat similar approvals more cautiously and preserve the rejected job signal.",
-                source: "apply_sprint_delete",
+                guidance: `A user deleted an agency-approved Apply Sprint item because the job was not a good fit. Reasons: ${reasonText}.${input.note ? ` Note: ${input.note}` : ""} Treat similar approvals more cautiously and preserve the rejected job signal.`,
+                source: input.source,
                 jobProfileMatchId: application.jobProfileMatchId,
                 jobPostingId: application.jobPostingId,
                 company: application.jobPosting.company,
@@ -92,12 +98,23 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
           ]
         : []),
     ]);
+    if (application.jobProfileMatchId) {
+      await captureJobRejectionLearning({
+        userId: application.userId,
+        matchId: application.jobProfileMatchId,
+        jobPostingId: application.jobPostingId,
+        source: input.source,
+        reasons: input.reasons,
+        note: input.note,
+        previousStatus: application.status,
+      });
+    }
     await recordRejectedJobSuppression({
       userId: application.userId,
       job: application.jobPosting,
       jobProfileMatchId: application.jobProfileMatchId,
-      source: "apply_sprint_delete",
-      reason: "Deleted from Apply Sprint as not a good fit.",
+      source: input.source,
+      reason: input.reasons.length || input.note ? `Deleted from Apply Sprint. Reasons: ${reasonText}.${input.note ? ` Note: ${input.note}` : ""}` : "Deleted from Apply Sprint as not a good fit.",
     });
     refreshOutcomeCalibration({ userId: application.userId, source: "job_rejected" });
 
@@ -105,4 +122,15 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
   } catch (error) {
     return apiError(error, 400);
   }
+}
+
+async function parseDeleteInput(request: Request): Promise<{ reasons: RejectionReasonCode[]; note: string | null; source: string }> {
+  const payload = await request.json().catch(() => ({})) as { reasons?: unknown; note?: unknown; source?: unknown };
+  const allowedReasons = new Set<string>(rejectionReasonCodes);
+  const rawReasons: unknown[] = Array.isArray(payload.reasons) ? payload.reasons : [];
+  return {
+    reasons: Array.from(new Set(rawReasons.filter((reason): reason is RejectionReasonCode => typeof reason === "string" && allowedReasons.has(reason)))),
+    note: typeof payload?.note === "string" && payload.note.trim() ? payload.note.trim().slice(0, 1000) : null,
+    source: typeof payload?.source === "string" && payload.source.trim() ? payload.source.trim().slice(0, 80) : "apply_sprint_delete",
+  };
 }
