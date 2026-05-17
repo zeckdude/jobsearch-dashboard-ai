@@ -265,12 +265,51 @@ export default async function SettingsPage() {
                   <Chip size="small" color="primary" label="Learning impact" />
                   <Chip size="small" variant="outlined" label={`${learningImpact.length} active rule${learningImpact.length === 1 ? "" : "s"}`} />
                   <Chip size="small" color={learningImpact.some((item) => item.status === "needs_review") ? "warning" : "success"} variant="outlined" label={`${learningImpact.filter((item) => item.status === "needs_review").length} need review`} />
+                  <Chip size="small" color={autoRollbackCandidates(learningImpact).length ? "warning" : "success"} variant="outlined" label={`${autoRollbackCandidates(learningImpact).length} auto rollback`} />
                 </Stack>
                 <Typography variant="h3">Learning impact</Typography>
                 <Typography color="text.secondary" sx={{ mt: 0.75 }}>
-                  Active proposal-backed learning is tracked against later agent runs and quality evaluations. Disable a rule here when it is not helping; rollback is captured as a quality signal for later review.
+                  Active proposal-backed learning is tracked against later agent runs and quality evaluations. Auto rollback only disables future use, never deletes history, and captures rollback as a quality signal.
                 </Typography>
               </Box>
+              <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
+                <ActionButton
+                  postTo="/api/observability/learning-impact/auto-rollback"
+                  body={{ dryRun: true }}
+                  variant="outlined"
+                  color="info"
+                  size="small"
+                  message="Auto rollback preview completed."
+                >
+                  Preview auto rollback
+                </ActionButton>
+                <ActionButton
+                  postTo="/api/observability/learning-impact/auto-rollback"
+                  body={{ dryRun: false }}
+                  variant="outlined"
+                  color="warning"
+                  size="small"
+                  message="Auto rollback completed."
+                >
+                  Run auto rollback
+                </ActionButton>
+              </Stack>
+              {autoRollbackCandidates(learningImpact).length ? (
+                <Box sx={{ borderTop: 1, borderColor: "divider", pt: 1.25 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 800 }}>Auto rollback candidates</Typography>
+                  <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mt: 1 }}>
+                    {autoRollbackCandidates(learningImpact).map((item) => (
+                      <Chip
+                        key={item.adjustmentId}
+                        size="small"
+                        color="warning"
+                        variant="outlined"
+                        label={`${item.skillId.replace(/_/g, " ")}${item.category ? `: ${item.category.replace(/_/g, " ")}` : ""}`}
+                      />
+                    ))}
+                  </Stack>
+                </Box>
+              ) : null}
               {learningImpact.length ? (
                 <Stack spacing={1.25}>
                   {learningImpact.map((item) => (
@@ -681,6 +720,24 @@ function learningImpactStatusColor(status: string) {
   if (status === "needs_review") return "warning" as const;
   if (status === "neutral") return "info" as const;
   return "default" as const;
+}
+
+function autoRollbackCandidates(
+  items: Array<{
+    adjustmentId: string;
+    skillId: string;
+    category: string | null;
+    status: string;
+    appliedRunCount: number;
+    relatedFailedCount: number;
+    relatedNeedsReviewCount: number;
+  }>,
+) {
+  return items.filter((item) => (
+    item.status === "needs_review" &&
+    item.appliedRunCount >= 2 &&
+    (item.relatedFailedCount >= 1 || item.relatedNeedsReviewCount >= 2)
+  ));
 }
 
 type SettingsGithubReview = {
