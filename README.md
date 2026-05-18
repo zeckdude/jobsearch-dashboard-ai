@@ -347,3 +347,7 @@ EMBEDDINGS_WORKER_BACKFILL_EVIDENCE=false
 ```
 
 The worker never generates application materials or submits applications. It only syncs evidence chunks and embeddings for retrieval.
+
+## License
+
+This project is licensed under `AGPL-3.0-only`. See [LICENSE](./LICENSE).
