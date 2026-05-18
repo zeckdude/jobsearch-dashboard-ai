@@ -170,4 +170,52 @@ describe("GET /api/applications/[id]/assistant-package", () => {
     ]);
     expect(body.safety.manualSubmitRequired).toBe(true);
   });
+
+  it("forces Ashby packages into normal-browser manual submit mode", async () => {
+    evaluateAutoSubmitEligibilityMock.mockResolvedValueOnce({
+      allowed: true,
+      reasons: [],
+      effectiveAutoSubmitEnabled: true,
+      override: null,
+      companyPolicy: null,
+      settings: {
+        autoSubmitEnabled: true,
+        requireApprovedPacket: true,
+        requireNoOpenUserRequests: true,
+        requireFreshAssistantRun: true,
+        maxRunAgeMinutes: 30,
+        allowDemographicSubmission: false,
+      },
+    });
+    findApplicationMock.mockResolvedValue({
+      id: "app_ashby",
+      userId: "user_1",
+      status: "ready_to_apply",
+      notes: null,
+      jobPosting: {
+        id: "job_ashby",
+        company: "Ashby Co",
+        title: "Frontend Engineer",
+        applicationUrl: "https://jobs.ashbyhq.com/acme/123",
+        atsProvider: "ashby",
+      },
+      resume: { id: "resume_1" },
+      coverLetter: { id: "letter_1", body: "Cover letter body." },
+      user: { email: "candidate@example.com", name: "Carl Welch", profile: null },
+      applicationPackets: [],
+    } as unknown as Awaited<ReturnType<typeof prisma.application.findUnique>>);
+
+    const response = await GET(new Request("http://localhost/api/applications/app_ashby/assistant-package"), {
+      params: { id: "app_ashby" },
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.safety.autoSubmitAllowed).toBe(false);
+    expect(body.safety.manualSubmitRequired).toBe(true);
+    expect(body.safety.normalBrowserRecommended).toBe(true);
+    expect(body.safety.autoSubmitReasons).toEqual([
+      "Ashby applications use normal Chrome assisted fill with manual final submit to avoid anti-fraud friction.",
+    ]);
+  });
 });

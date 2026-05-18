@@ -9,6 +9,7 @@ const fields = {
 };
 const statusElement = document.querySelector("#status");
 const captureButton = document.querySelector("#capture");
+const fillApplicationButton = document.querySelector("#fillApplication");
 const openJobLink = document.querySelector("#openJob");
 let capturedPayload = null;
 
@@ -22,6 +23,10 @@ function normalizeAppUrl(value) {
 
 function captureEndpoint() {
   return `${normalizeAppUrl(fields.apiUrl.value)}/api/jobs/capture`;
+}
+
+function assistantPackageByUrlEndpoint(pageUrl) {
+  return `${normalizeAppUrl(fields.apiUrl.value)}/api/applications/assistant-package/by-url?url=${encodeURIComponent(pageUrl)}`;
 }
 
 function setOpenJobLink(jobUrl) {
@@ -100,8 +105,41 @@ async function saveCapture() {
   }
 }
 
+async function fillApplicationFromPackage() {
+  fillApplicationButton.disabled = true;
+  setStatus("Loading application package...");
+  try {
+    const token = fields.token.value.trim();
+    const appUrl = normalizeAppUrl(fields.apiUrl.value);
+    await chrome.storage.local.set({ jobSearchOsToken: token, jobSearchOsAppUrl: appUrl });
+    const tab = await getActiveTab();
+    if (!tab?.id || !tab.url) throw new Error("No active application tab found.");
+    const response = await fetch(assistantPackageByUrlEndpoint(tab.url), {
+      headers: {
+        ...(token ? { "x-job-search-os-token": token } : {}),
+      },
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || "Unable to load an application package for this page.");
+    const result = await chrome.tabs.sendMessage(tab.id, { type: "FILL_APPLICATION_FROM_PACKAGE", package: payload });
+    const filled = Number(result?.filled || 0);
+    const skipped = Number(result?.skipped || 0);
+    const uploads = Number(result?.uploads || 0);
+    const warning = uploads ? ` ${uploads} upload field(s) still need manual file selection.` : "";
+    setStatus(`Filled ${filled} field(s). Skipped ${skipped}.${warning} Review and submit manually.`);
+  } catch (error) {
+    setStatus(error instanceof Error ? error.message : "Unable to fill this application.");
+  } finally {
+    fillApplicationButton.disabled = false;
+  }
+}
+
 captureButton.addEventListener("click", () => {
   void saveCapture();
+});
+
+fillApplicationButton.addEventListener("click", () => {
+  void fillApplicationFromPackage();
 });
 
 void loadCapture();

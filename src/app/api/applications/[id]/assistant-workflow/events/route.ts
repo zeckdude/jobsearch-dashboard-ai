@@ -41,7 +41,11 @@ const eventSchema = z.object({
   result: z.string().trim().max(120).nullish(),
   error: z.string().trim().max(1000).nullish(),
   url: z.string().trim().max(2000).nullish(),
+  blockerType: z.string().trim().max(120).nullish(),
+  atsProvider: z.string().trim().max(120).nullish(),
+  safeRetry: z.string().trim().max(120).nullish(),
   at: z.string().trim().max(80).nullish(),
+  payload: z.record(z.unknown()).optional(),
 });
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {

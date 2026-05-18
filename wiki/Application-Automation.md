@@ -121,14 +121,24 @@ The assistant can:
 - detect blockers
 - update automation run records
 - ask the user for help through Needs Me
+- detect Ashby possible-spam/reCAPTCHA blocks as `ats_spam_block` and recommend normal Chrome assisted fill
 
 The assistant must not:
 
 - bypass CAPTCHA
 - use stealth settings
 - rotate proxies
+- mask browser automation signals
 - invent answers
 - fill sensitive demographic answers automatically
+
+## Ashby Safe Apply Path
+
+Ashby may flag Playwright-controlled submissions as possible spam. Job Search OS treats that as a blocker, not something to bypass.
+
+When the assistant sees Ashby copy such as `We couldn't submit your application`, `possible spam`, or reCAPTCHA anti-spam guidance, it records `ats_spam_block`, keeps the application out of applied state, creates a Needs Me item, and recommends retrying in the user's normal Chrome profile.
+
+The Chrome extension supports `Fill from Job Search OS` on a ready application URL. It loads the local assistant package, fills safe known fields and obvious cover-letter/application-answer fields, highlights upload fields that require manual file selection, and never clicks submit. If Ashby still blocks normal Chrome submission, the recommended fallback is company direct or recruiter outreach, not stealth automation.
 
 ## Auto-Submit Policy
 

@@ -97,7 +97,11 @@ export type AssistantWorkflowBrowserEvent = {
   result?: string | null;
   error?: string | null;
   url?: string | null;
+  blockerType?: string | null;
+  atsProvider?: string | null;
+  safeRetry?: string | null;
   at?: string | null;
+  payload?: Record<string, unknown>;
 };
 
 type KnownFieldApplication = Prisma.ApplicationGetPayload<{
@@ -451,10 +455,113 @@ async function reduceBrowserEvent(
     };
   }
 
+  if (event.type === "blocker_found") {
+    const blockerType = stringPayloadValue(event, "blockerType") ?? "unknown";
+    const blockerMessage = event.message ?? blockerMessageForType(blockerType);
+    await markAssistantBlocked(run, blockerType, blockerMessage, event);
+    return {
+      ...state,
+      currentNode: "pauseForUser",
+      status: "NEEDS_USER",
+      pendingCommand: null,
+      events: [
+        ...state.events,
+        workflowEvent("blocker_found", blockerMessage, {
+          blockerType,
+          url: event.url ?? stringPayloadValue(event, "url") ?? null,
+          safeRetry: stringPayloadValue(event, "safeRetry") ?? null,
+        }),
+      ],
+    };
+  }
+
   return {
     ...state,
     events: [...state.events, workflowEvent(event.type, event.message ?? workflowEventMessage(event), { fieldId: event.fieldId ?? null })],
   };
+}
+
+async function markAssistantBlocked(
+  run: Awaited<ReturnType<typeof latestWorkflowRun>>,
+  blockerType: string,
+  message: string,
+  event: AssistantWorkflowBrowserEvent,
+) {
+  await prisma.applicationAutomationRun.update({
+    where: { id: run.id },
+    data: {
+      status: "NEEDS_USER",
+      blockerType,
+      blockerMessage: message,
+      finishedAt: new Date(),
+    },
+  }).catch(() => null);
+  await prisma.applicationEvent.create({
+    data: {
+      applicationId: run.applicationId,
+      type: "note_added",
+      payload: {
+        source: "application_assistant_workflow",
+        automationRunId: run.id,
+        status: "NEEDS_USER",
+        blockerType,
+        blockerMessage: message,
+        url: event.url ?? stringPayloadValue(event, "url") ?? null,
+      } as Prisma.InputJsonValue,
+    },
+  }).catch(() => null);
+
+  const existing = await prisma.agentUserRequest.findFirst({
+    where: {
+      applicationId: run.applicationId,
+      type: "APPLICATION_BLOCKED",
+      status: "OPEN",
+    },
+  }).catch(() => null);
+  if (!existing) {
+    await createAgentUserRequest({
+      userId: run.userId,
+      applicationId: run.applicationId,
+      jobPostingId: run.jobPostingId,
+      type: "APPLICATION_BLOCKED",
+      question: blockerMessageForType(blockerType, message),
+      contextJson: {
+        blockerType,
+        source: "application_assistant_workflow",
+        automationRunId: run.id,
+        url: event.url ?? stringPayloadValue(event, "url") ?? null,
+        safeRetry: stringPayloadValue(event, "safeRetry") ?? null,
+        recommendedActions: recommendedActionsForBlocker(blockerType),
+      } as Prisma.InputJsonValue,
+    }).catch(() => null);
+  }
+  await createQualityExampleFromAutomationRun(run.id, "AUTOMATION_RUN").catch(() => null);
+}
+
+function blockerMessageForType(blockerType: string, fallback?: string | null) {
+  if (blockerType === "ats_spam_block") {
+    return "Ashby blocked the assisted submission as possible spam or reCAPTCHA risk. Retry with the Chrome extension in your normal browser, submit manually, or use direct recruiter/company outreach.";
+  }
+  return fallback || "The assistant found a blocker and needs user input.";
+}
+
+function recommendedActionsForBlocker(blockerType: string) {
+  if (blockerType === "ats_spam_block") {
+    return [
+      "Open the Ashby application in your normal Chrome profile.",
+      "Use the Job Search OS Chrome extension Fill from Job Search OS action.",
+      "Review every field and submit manually.",
+      "If Ashby still blocks the submit, use the company direct/recruiter outreach path.",
+    ];
+  }
+  return [];
+}
+
+function stringPayloadValue(event: AssistantWorkflowBrowserEvent, key: string) {
+  const direct = event[key as keyof AssistantWorkflowBrowserEvent];
+  if (typeof direct === "string") return direct;
+  const value = event.payload?.[key];
+  return typeof value === "string" ? value : null;
 }
 
 async function ensureNextCommand(

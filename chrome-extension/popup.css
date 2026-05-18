@@ -88,6 +88,17 @@ button {
   padding: 10px 12px;
 }
 
+.actions {
+  display: grid;
+  gap: 8px;
+}
+
+button.secondary {
+  border: 1px solid #161616;
+  background: #fffdfa;
+  color: #161616;
+}
+
 .open-job {
   display: inline-flex;
   width: fit-content;

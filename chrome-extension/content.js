@@ -140,6 +140,11 @@ function cleanCompanyFromTitle(title) {
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === "FILL_APPLICATION_FROM_PACKAGE") {
+    sendResponse(fillApplicationFromPackage(message.package || {}));
+    return true;
+  }
+
   if (message?.type !== "CAPTURE_JOB_PAGE") return false;
 
   sendResponse({
@@ -159,3 +164,126 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   });
   return true;
 });
+
+function fillApplicationFromPackage(assistantPackage) {
+  const values = packageValues(assistantPackage);
+  const result = { filled: 0, skipped: 0, uploads: 0 };
+  const fields = Array.from(document.querySelectorAll("input:not([type=hidden]), textarea, select"));
+  for (const field of fields) {
+    if (!isFillable(field)) {
+      result.skipped += 1;
+      continue;
+    }
+    if (field.type === "file") {
+      highlightUpload(field);
+      result.uploads += 1;
+      continue;
+    }
+    const descriptor = fieldDescriptor(field);
+    const value = valueForDescriptor(descriptor, values, field);
+    if (!value) {
+      result.skipped += 1;
+      continue;
+    }
+    if (fillField(field, value)) result.filled += 1;
+  }
+  return result;
+}
+
+function packageValues(assistantPackage) {
+  const candidate = assistantPackage.candidate || {};
+  const materials = assistantPackage.materials || {};
+  return {
+    fullName: candidate.fullName || "",
+    firstName: candidate.firstName || "",
+    lastName: candidate.lastName || "",
+    email: candidate.email || "",
+    phone: candidate.phone || "",
+    location: candidate.location || "",
+    linkedinUrl: candidate.linkedinUrl || "",
+    githubUrl: candidate.githubUrl || "",
+    portfolioUrl: candidate.portfolioUrl || "",
+    coverLetter: materials.coverLetterBody || "",
+    selectedAnswers: Array.isArray(materials.selectedApplicationAnswers) ? materials.selectedApplicationAnswers : []
+  };
+}
+
+function isFillable(field) {
+  if (field.disabled || field.readOnly) return false;
+  const type = String(field.type || "").toLowerCase();
+  return !["password", "submit", "button", "reset", "checkbox", "radio"].includes(type);
+}
+
+function fieldDescriptor(field) {
+  const parts = [
+    field.id,
+    field.name,
+    field.placeholder,
+    field.getAttribute("aria-label"),
+    field.closest("label")?.textContent,
+    labelFor(field),
+    field.closest("fieldset")?.textContent?.slice(0, 500)
+  ];
+  return parts.filter(Boolean).join(" ").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function labelFor(field) {
+  if (!field.id) return "";
+  return document.querySelector(`label[for="${CSS.escape(field.id)}"]`)?.textContent || "";
+}
+
+function valueForDescriptor(descriptor, values, field) {
+  const selected = answerForSelectedQuestion(descriptor, values.selectedAnswers);
+  if (selected) return selected;
+  if (/\bfirst\b.*\bname\b|\bgiven\b.*\bname\b/.test(descriptor)) return values.firstName;
+  if (/\blast\b.*\bname\b|\bfamily\b.*\bname\b|\bsurname\b/.test(descriptor)) return values.lastName;
+  if (/\bfull\b.*\bname\b|^name\b|\bname$/.test(descriptor)) return values.fullName;
+  if (/\bemail\b/.test(descriptor)) return values.email;
+  if (/\bphone\b|\bmobile\b|\btel\b/.test(descriptor)) return values.phone;
+  if (/\blinkedin\b/.test(descriptor)) return values.linkedinUrl;
+  if (/\bgithub\b/.test(descriptor)) return values.githubUrl;
+  if (/\bportfolio\b|\bwebsite\b|\bpersonal site\b/.test(descriptor)) return values.portfolioUrl;
+  if (/\blocation\b|\bcity\b|\baddress\b/.test(descriptor)) return values.location;
+  if (/\bcover letter\b|why.*join|why.*team|why.*company|tell us why/.test(descriptor)) return values.coverLetter;
+  if (field.tagName === "TEXTAREA" && /additional|anything else|message|note/.test(descriptor)) return "";
+  return "";
+}
+
+function answerForSelectedQuestion(descriptor, selectedAnswers) {
+  for (const item of selectedAnswers) {
+    const question = String(item.question || "").toLowerCase();
+    if (!question) continue;
+    const tokens = question.split(/[^a-z0-9]+/).filter((token) => token.length > 3);
+    const overlap = tokens.filter((token) => descriptor.includes(token)).length;
+    if (overlap >= Math.min(3, tokens.length)) return item.answer || "";
+  }
+  return "";
+}
+
+function fillField(field, value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  if (field.tagName === "SELECT") return selectOption(field, text);
+  field.focus();
+  field.value = text;
+  field.dispatchEvent(new InputEvent("input", { bubbles: true, data: text, inputType: "insertText" }));
+  field.dispatchEvent(new Event("change", { bubbles: true }));
+  return true;
+}
+
+function selectOption(field, value) {
+  const normalized = value.toLowerCase();
+  const option = Array.from(field.options || []).find((candidate) => {
+    const text = `${candidate.textContent || ""} ${candidate.value || ""}`.toLowerCase();
+    return text.includes(normalized) || normalized.includes(text.trim());
+  });
+  if (!option) return false;
+  field.value = option.value;
+  field.dispatchEvent(new Event("change", { bubbles: true }));
+  return true;
+}
+
+function highlightUpload(field) {
+  field.style.outline = "3px solid #946200";
+  field.title = "Upload the prepared resume or cover letter from Job Search OS, then submit manually.";
+}

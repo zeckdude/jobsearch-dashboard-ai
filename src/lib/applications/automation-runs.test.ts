@@ -64,6 +64,10 @@ playwright._impl._errors.Error: Locator.count: Frame was detached
       status: "BLOCKED",
       blockerType: "closed_job",
     });
+    expect(classifyAssistantLog("We couldn't submit your application. Your application submission was flagged as possible spam.")).toMatchObject({
+      status: "BLOCKED",
+      blockerType: "ats_spam_block",
+    });
   });
 
   it("extracts action summaries from logs", () => {

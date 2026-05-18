@@ -18,6 +18,7 @@ const assistantClosedBlockerMessage =
   "The assistant browser was closed or stopped before submission. Relaunch the assistant or mark the application applied if you submitted manually.";
 
 const blockerPatterns: Array<{ type: string; pattern: RegExp; message: string }> = [
+  { type: "ats_spam_block", pattern: /we couldn.?t submit your application|possible spam|flagged as possible spam|google.?s recaptcha technology|to protect against spam and bots/i, message: "Ashby blocked submission as possible spam or reCAPTCHA risk. Retry through normal Chrome assisted fill and submit manually." },
   { type: "closed_job", pattern: /closed|removed|unavailable|no form can be filled/i, message: "The application page appears closed, removed, or unavailable." },
   { type: "captcha", pattern: /captcha|human verification/i, message: "The application page requires CAPTCHA or human verification." },
   { type: "login_block", pattern: /sign-in blocked|complete login|login/i, message: "The application requires login or account access." },

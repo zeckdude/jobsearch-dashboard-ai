@@ -144,6 +144,11 @@ PHONE_COUNTRY_ANSWER = "United States +1"
 COUNTRY_ANSWER = "United States"
 SUBMIT_PATTERNS = re.compile(r"submit|send application|apply now|complete application|finish", re.I)
 CAPTCHA_PATTERNS = re.compile(r"captcha|recaptcha|hcaptcha|verify you are human", re.I)
+ASHBY_SPAM_BLOCK_PATTERNS = re.compile(
+    r"we couldn.?t submit your application|possible spam|flagged as possible spam|"
+    r"google.?s recaptcha technology|to protect against spam and bots|submit your application again",
+    re.I,
+)
 SUBMIT_CONFIRMATION_PATTERNS = re.compile(
     r"application (has been )?(submitted|received)|"
     r"thank you for (applying|your application)|"
@@ -244,6 +249,12 @@ def main() -> int:
             browser_or_context.close()
             open_manual_handoff(package["job"]["applicationUrl"], workdir)
             print("Complete login/application manually in the normal Chrome window.")
+            return 0
+
+        if is_ashby_application(page.url, package) and ASHBY_SPAM_BLOCK_PATTERNS.search(body_text):
+            emit_ashby_spam_block(args, page)
+            browser_or_context.close()
+            open_manual_handoff(package["job"]["applicationUrl"], workdir)
             return 0
 
         if CAPTCHA_PATTERNS.search(body_text):
@@ -349,6 +360,9 @@ def main() -> int:
             print("No fillable application fields or matching upload controls were found on this page.")
             print("This is often a job listing page, login page, or intermediary board rather than the final application form.")
         application_marked_applied = False
+        if auto_submit_allowed and is_ashby_application(page.url, package):
+            auto_submit_allowed = False
+            print("Ashby application detected. Auto-submit disabled; use normal Chrome assisted fill and submit manually.")
         if auto_submit_allowed:
             submitted = attempt_auto_submit(page, form_contexts, inventory_after, selected_answers_text)
             if submitted:
@@ -1584,6 +1598,27 @@ def open_embedded_application_form(page: Any) -> None:
         return
 
 
+def is_ashby_application(current_url: str, package: dict[str, Any]) -> bool:
+    values = [
+        current_url,
+        str(package.get("job", {}).get("applicationUrl", "")),
+        str(package.get("job", {}).get("applicationHost", "")),
+    ]
+    return any("ashbyhq.com" in value.lower() for value in values)
+
+
+def emit_ashby_spam_block(args: argparse.Namespace, page: Any) -> None:
+    message = "Ashby blocked submission as possible spam or reCAPTCHA risk."
+    assistant_event(args.application_id, "blocker_found", message, {
+        "blockerType": "ats_spam_block",
+        "url": page.url,
+        "atsProvider": "ashby",
+        "safeRetry": "normal_chrome_extension_assist",
+    })
+    print("Ashby reported a possible-spam or reCAPTCHA submission block.")
+    print("Stopping the Playwright-controlled flow. Retry in normal Chrome with the Job Search OS extension, then submit manually.")
+
+
 def click_apply_link_by_selector(page: Any) -> bool:
     selectors = [
         "a#job-cta-alt",
@@ -1982,6 +2017,10 @@ def keep_open(
                 browser.close()
                 open_manual_handoff(original_url, workdir)
                 return
+            if ashby_spam_block_detected(browser, mark_applied_state):
+                browser.close()
+                open_manual_handoff(original_url, workdir)
+                return
             maybe_mark_manual_submit(browser, workdir, mark_applied_state)
             if browser_was_closed_without_pages(browser, mark_applied_state):
                 return
@@ -1993,6 +2032,10 @@ def keep_open(
         while True:
             if google_block_detected(browser):
                 print("Google sign-in blocked the automation browser. Switching to normal browser handoff.")
+                browser.close()
+                open_manual_handoff(original_url, workdir)
+                return
+            if ashby_spam_block_detected(browser, mark_applied_state):
                 browser.close()
                 open_manual_handoff(original_url, workdir)
                 return
@@ -2045,6 +2088,37 @@ def maybe_mark_manual_submit(browser: Any, workdir: Path, mark_applied_state: di
         "manual submit confirmation",
     )
     mark_applied_state["marked"] = marked
+
+
+def ashby_spam_block_detected(browser: Any, state: dict[str, Any] | None) -> bool:
+    if not state:
+        return False
+    package = state.get("package") if isinstance(state.get("package"), dict) else {}
+    if not any(is_ashby_application(page.url, package) for page in browser_pages(browser)):
+        return False
+    for page in browser_pages(browser):
+        try:
+            body_text = page.inner_text("body", timeout=500)
+        except Exception:
+            continue
+        if ASHBY_SPAM_BLOCK_PATTERNS.search(body_text):
+            if not state.get("ashby_spam_block_reported"):
+                args = argparse.Namespace(application_id=state.get("application_id"))
+                emit_ashby_spam_block(args, page)
+                post_workflow_event(
+                    state,
+                    "blocker_found",
+                    "Ashby blocked submission as possible spam or reCAPTCHA risk.",
+                    {
+                        "blockerType": "ats_spam_block",
+                        "url": page.url,
+                        "atsProvider": "ashby",
+                        "safeRetry": "normal_chrome_extension_assist",
+                    },
+                )
+                state["ashby_spam_block_reported"] = True
+            return True
+    return False
 
 
 def maybe_report_field_learning(browser: Any, state: dict[str, Any] | None) -> None:

@@ -1,6 +1,6 @@
 # Job Search OS Capture Extension
 
-Local Chrome extension for saving job pages into the app.
+Local Chrome extension for saving job pages into the app and filling ready application forms from prepared Job Search OS packages.
 
 ## Install Locally
 
@@ -15,6 +15,12 @@ Open a job page, click the extension, review the extracted fields, and save. The
 If the saved job has zero matching search profiles, the app creates an enabled captured-intent profile for similar roles, scores the captured job against it immediately, and reports that profile name in the popup status. The default lane is `AI-Native Enterprise Product Frontend`.
 
 If the app is running on a different local port, open **Local settings** in the extension popup and set **App URL** to that address, for example `http://localhost:3001`.
+
+## Assisted Apply
+
+On a ready application page, click **Fill from Job Search OS**. The extension looks up the ready application by the current URL through `GET /api/applications/assistant-package/by-url`, then fills safe known fields such as name, email, phone, links, location, selected application-answer text, and obvious cover-letter fields.
+
+The extension runs in your regular Chrome profile and does not click submit, solve CAPTCHA, use stealth settings, or rotate networks. File inputs are highlighted for manual resume or cover-letter upload because Chrome extensions cannot safely set local file paths without user selection.
 
 ## Package
 

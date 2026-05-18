@@ -172,6 +172,7 @@ The assistant will:
 - prepare selected application-question answers as a local text file when you have chosen an answer option in the packet review page
 - report meaningful workflow activity, detected fields, pending commands, blockers, and ready-to-submit state back to Apply Sprint
 - create Needs Me requests when a required or custom field cannot be safely answered
+- stop on Ashby possible-spam/reCAPTCHA blocks with `ats_spam_block` and route the user to normal Chrome assisted fill instead of retrying Playwright submission
 
 Quality loop endpoints:
 
@@ -212,6 +213,8 @@ The assistant will not:
 - use stealth browser settings
 - rotate proxies
 - answer sensitive demographic questions automatically
+
+For Ashby roles, the safer path is normal Chrome assisted apply. The Chrome extension can load the prepared assistant package for the current application URL, fill safe known fields and obvious cover-letter/custom-answer text in the user's regular Chrome profile, highlight upload fields that still need manual file selection, and stop before submit. This is not an anti-fraud bypass: it does not solve CAPTCHA, mask automation, rotate networks, or click submit.
 
 During autofill testing, Apply Sprint includes a reset control for the selected application. It clears assistant automation runs and open assistant blockers, stops any tracked local runner process, and lets you relaunch without rejecting the job or deleting learned memories.
 
