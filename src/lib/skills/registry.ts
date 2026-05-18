@@ -9,6 +9,7 @@ import { runDuplicateStaleJobDetectorAgent } from "@/lib/agents/duplicate-stale-
 import { runGithubPortfolioReviewAgent } from "@/lib/agents/github-portfolio-review";
 import { runInterviewPrepAgent } from "@/lib/agents/interview-prep";
 import { runJobFitScoringAgent } from "@/lib/agents/job-fit-scorer";
+import { runMarketIntelligenceAgent } from "@/lib/agents/market-intelligence";
 import { runNetworkingStrategyAgent } from "@/lib/agents/networking-strategy";
 import { runOutcomeLearningAgent } from "@/lib/agents/outcome-learning";
 import { runPortfolioMatchAgent } from "@/lib/agents/portfolio-match";
@@ -227,6 +228,16 @@ export const skillRegistry = {
     outputSchema: anyOutput,
     defaultPolicy: manualSubmitPolicy,
     execute: async (input: any) => (await import("@/lib/applications/recruiting-agency")).runRecruitingAgency(input),
+  },
+  market_intelligence: {
+    id: "market_intelligence",
+    label: "Market Intelligence",
+    agentType: "MARKET_INTELLIGENCE",
+    riskLevel: "LOW",
+    inputSchema: z.object({ userId: z.string().optional(), lookbackDays: z.number().int().min(7).max(180).optional() }),
+    outputSchema: anyOutput,
+    defaultPolicy: lowRiskPolicy,
+    execute: async (input: any) => (await runMarketIntelligenceAgent(input)).output,
   },
   prepare_application_packet: {
     id: "prepare_application_packet",

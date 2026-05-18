@@ -82,8 +82,9 @@ Evaluation runs score examples and cluster repeated failure categories into prop
 1. Search profiles define target roles, industries, locations, compensation, keywords, and exclusions.
 2. Search Profile Manager reviews profile definitions and performance.
 3. It identifies overlap, broadness, narrowness, stale profiles, and noisy searches.
-4. Suggested edits are shown for user approval.
-5. Destructive actions are not applied automatically.
+4. Market Intelligence reviews recent pipeline data against sourced labor-market signals and produces review-only search, positioning, company-targeting, and outreach recommendations.
+5. Suggested edits are shown for user approval.
+6. Destructive actions are not applied automatically.
 
 ## Job Discovery and Scoring Workflow
 

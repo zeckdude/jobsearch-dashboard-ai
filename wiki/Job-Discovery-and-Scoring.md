@@ -58,6 +58,12 @@ Jobs can be added manually through the app or through the Chrome extension. Capt
 
 Chrome capture also learns from selection intent. When a captured job produces zero matching profiles, the system creates an enabled captured-intent profile and scores the captured job against it immediately. The first generated lane is `AI-Native Enterprise Product Frontend`, combining the preferred career direction of AI-native product/frontend work with broader senior frontend/product engineering defaults for urgent search coverage.
 
+## Market Intelligence
+
+The Profiles page includes a weekly market intelligence brief. The `MARKET_INTELLIGENCE` agent compares recent matched jobs, profile health, application outcomes, skill mentions, and company patterns against curated external labor-market sources.
+
+The report is advisory. It shows lane demand, skill-signal charts, cited source links, data freshness, confidence, and review-only actions for profile tuning, positioning, company targeting, and outreach. It does not automatically create, edit, pause, or delete search profiles.
+
 ## Duplicate and Stale Detection
 
 The Duplicate/Stale Job Detector looks for:

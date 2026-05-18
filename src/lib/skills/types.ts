@@ -21,6 +21,7 @@ export type SkillId =
   | "search_expansion"
   | "daily_command_center"
   | "recruiting_agency"
+  | "market_intelligence"
   | "prepare_application_packet"
   | "approve_agency_match";
 
