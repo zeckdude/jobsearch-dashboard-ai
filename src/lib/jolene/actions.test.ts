@@ -288,8 +288,33 @@ describe("executeJoleneAction", () => {
 
     expect(result.handled).toBe(true);
     expect(result.requiresConfirmation).toBe(true);
+    expect(result.actionJson).toMatchObject({
+      confirmationPlanId: expect.any(String),
+      allowedExecution: "internal_repairs_only",
+      expiresAt: expect.any(String),
+    });
     expect(result.plannedActions).toEqual(expect.arrayContaining([expect.objectContaining({ id: "guarded_app_mutation", risk: "guarded_mutation" })]));
     expect(startJobSearchRunMock).not.toHaveBeenCalled();
+  });
+
+  it("plans confirmed internal application integrity repair", async () => {
+    const result = await executeJoleneAction("Repair application state drift.", { userId: "user_1" });
+
+    expect(result.handled).toBe(true);
+    expect(result.requiresConfirmation).toBe(true);
+    expect(result.actionJson).toMatchObject({
+      action: "jolene_adk_operator",
+      confirmationPlanId: expect.any(String),
+      allowedExecution: "internal_repairs_only",
+      plannedActions: [
+        expect.objectContaining({
+          id: "repair_application_integrity",
+          executable: true,
+          href: "/applications",
+          status: "planned",
+        }),
+      ],
+    });
   });
 
   it("diagnoses why an applied role is still visible in active application state", async () => {

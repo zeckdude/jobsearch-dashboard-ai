@@ -4,15 +4,18 @@ import { runMarketIntelligenceAgent } from "@/lib/agents/market-intelligence";
 import { getAdkJoleneOperatorRegistration, isAdkEnabled } from "@/lib/adk/registry";
 import { syncJobResponseEmail } from "@/lib/email/sync";
 import { startJobSearchRun } from "@/lib/job-search/start-run";
+import { createJoleneConfirmationPlan, type JoleneConfirmableAction, type JoleneExecutionBoundary } from "@/lib/jolene/confirmation";
 import { prisma } from "@/lib/prisma";
 
 export type JoleneOperatorAction = {
   id: string;
   label: string;
   risk: "read_only" | "safe_mutation" | "guarded_mutation" | "external_manual_gate";
-  status: "planned" | "executed" | "skipped";
+  status: "planned" | "executed" | "skipped" | "failed" | "cancelled";
   detail: string;
   href?: string;
+  executable?: boolean;
+  parameters?: Record<string, unknown>;
 };
 
 export type JoleneOperatorResult = {
@@ -28,6 +31,9 @@ export type JoleneOperatorResult = {
       tools: string[];
     };
     requiresConfirmation?: boolean;
+    confirmationPlanId?: string;
+    allowedExecution?: JoleneExecutionBoundary;
+    expiresAt?: string;
     plannedActions?: JoleneOperatorAction[];
     executedActions?: JoleneOperatorAction[];
     diagnostics?: Record<string, unknown>;
@@ -41,14 +47,14 @@ export async function executeJoleneAdkOperator(message: string, options: { userI
 
   const guarded = guardedActionPlan(normalized);
   if (guarded) {
+    const plan = createJoleneConfirmationPlan(guarded.actions);
     return {
       handled: true,
       reply: guarded.reply,
       actionJson: {
         action: "jolene_adk_operator",
         operator,
-        requiresConfirmation: true,
-        plannedActions: guarded.actions,
+        ...plan,
       },
     };
   }
@@ -141,17 +147,39 @@ function safeWorkflowPlan(normalized: string): JoleneOperatorAction[] {
   return uniqueActions(actions);
 }
 
-function guardedActionPlan(normalized: string) {
+function guardedActionPlan(normalized: string): { reply: string; actions: JoleneConfirmableAction[] } | null {
   if (/\b(submit|send)\b/.test(normalized) && /\b(application|applications|email|outreach|message)\b/.test(normalized)) {
     return confirmationPlan("I can help prepare or launch the workflow, but I need confirmation before external submission or sending anything.", [
-      guardedAction("external_submit_or_send", "Confirm external action", "Would submit an application, send email/outreach, or interact with a third-party system.", "external_manual_gate"),
+      guardedAction("external_submit_or_send", "Confirm external action", "Would submit an application, send email/outreach, or interact with a third-party system. Jolene will not execute this directly.", "external_manual_gate", { executable: false }),
     ]);
   }
+
+  if (/\b(repair|fix|sync|reconcile|clean up)\b/.test(normalized) && /\b(application|applications|integrity|state|drift|tracker|trackers)\b/.test(normalized)) {
+    return confirmationPlan("I can repair app-local application state drift after confirmation. I will not submit applications or contact employers.", [
+      guardedAction("repair_application_integrity", "Repair application state", "Run the existing application integrity repair to reconcile applied/submitted signals, linked match statuses, suppressions, and audit events.", "guarded_mutation", {
+        executable: true,
+        href: "/applications",
+      }),
+    ]);
+  }
+
+  if (/\b(repair|fix|clean up)\b/.test(normalized) && /\b(duplicate|duplicates|dedupe|deduplication|stale)\b/.test(normalized)) {
+    return confirmationPlan("I can run the internal duplicate/stale detector after confirmation. I will not approve, reject, archive, or delete jobs.", [
+      guardedAction("check_duplicates", "Run duplicate/stale detector", "Analyze job records for duplicates and stale postings, then update local duplicate/stale metadata.", "guarded_mutation", {
+        executable: true,
+        href: "/jobs",
+      }),
+    ]);
+  }
+
+  const graphRun = graphRunActionPlan(normalized);
+  if (graphRun) return graphRun;
+
   if (/\b(approve|reject|archive|delete|remove|disable|cancel|retry|repair|mark)\b/.test(normalized) && /\b(job|jobs|application|applications|profile|profiles|rule|rules|agent|run|duplicate|duplicates)\b/.test(normalized)) {
     const bulk = /\b(all|every|top \d+|\d+\s+(job|jobs|application|applications|duplicates|records))\b/.test(normalized);
     const label = bulk ? "Confirm bulk app change" : "Confirm app change";
-    return confirmationPlan("I can do that, but it changes app state. Confirm first and I will execute the exact affected records.", [
-      guardedAction("guarded_app_mutation", label, bulk ? "Would change multiple app records and must show affected records first." : "Would change app records and must be confirmed first.", "guarded_mutation"),
+    return confirmationPlan("I can plan that, but this kind of app-state change is outside Jolene's current internal-repairs execution boundary. Use the linked app surface to make the final change.", [
+      guardedAction("guarded_app_mutation", label, bulk ? "Would change multiple app records and must show affected records first." : "Would change app records and must be confirmed first.", "guarded_mutation", { executable: false }),
     ]);
   }
   return null;
@@ -245,11 +273,17 @@ function safeAction(id: string, label: string, detail: string): JoleneOperatorAc
   return { id, label, detail, risk: "safe_mutation", status: "planned" };
 }
 
-function guardedAction(id: string, label: string, detail: string, risk: JoleneOperatorAction["risk"]): JoleneOperatorAction {
-  return { id, label, detail, risk, status: "planned" };
+function guardedAction(
+  id: string,
+  label: string,
+  detail: string,
+  risk: JoleneConfirmableAction["risk"],
+  options: Pick<JoleneConfirmableAction, "executable" | "href" | "parameters"> = {},
+): JoleneConfirmableAction {
+  return { id, label, detail, risk, status: "planned", ...options };
 }
 
-function confirmationPlan(reply: string, actions: JoleneOperatorAction[]) {
+function confirmationPlan(reply: string, actions: JoleneConfirmableAction[]) {
   return { reply, actions };
 }
 
@@ -260,6 +294,44 @@ function uniqueActions(actions: JoleneOperatorAction[]) {
     seen.add(action.id);
     return true;
   });
+}
+
+function graphRunActionPlan(normalized: string) {
+  const runId = extractRunId(normalized);
+  if (!runId || !/\b(agent|run|workflow)\b/.test(normalized)) return null;
+
+  if (/\bretry\b/.test(normalized)) {
+    return confirmationPlan("I can retry that graph-backed run after confirmation. The retry will use the existing graph-run control path.", [
+      guardedAction("retry_agent_run", "Retry agent run", `Retry graph-backed agent run ${runId} as a child run.`, "guarded_mutation", {
+        executable: true,
+        href: "/agents",
+        parameters: { runId },
+      }),
+    ]);
+  }
+  if (/\bcancel\b/.test(normalized)) {
+    return confirmationPlan("I can cancel that graph-backed run after confirmation.", [
+      guardedAction("cancel_agent_run", "Cancel agent run", `Cancel graph-backed agent run ${runId} and record the cancellation event.`, "guarded_mutation", {
+        executable: true,
+        href: "/agents",
+        parameters: { runId },
+      }),
+    ]);
+  }
+  if (/\brepair\b/.test(normalized)) {
+    return confirmationPlan("I can repair that stale graph-backed run after confirmation.", [
+      guardedAction("repair_agent_run", "Repair agent run", `Mark stale graph-backed agent run ${runId} failed so it can be retried safely.`, "guarded_mutation", {
+        executable: true,
+        href: "/agents",
+        parameters: { runId },
+      }),
+    ]);
+  }
+  return null;
+}
+
+function extractRunId(normalized: string) {
+  return normalized.match(/\b(c[a-z0-9]{10,}|run_[a-z0-9_-]+|agentrun_[a-z0-9_-]+)\b/)?.[1] ?? "";
 }
 
 function extractLikelyEntity(message: string) {

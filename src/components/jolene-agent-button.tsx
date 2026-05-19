@@ -22,6 +22,7 @@ import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
+import { JoleneActionPlan, JoleneExecutedActions, type JoleneActionJson } from "@/components/jolene-action-plan";
 
 type JoleneMessage = {
   id: string;
@@ -33,7 +34,7 @@ type JoleneMessage = {
       href: string;
       kind?: "page" | "download" | "api";
     }>;
-  };
+  } & JoleneActionJson;
   createdAt: string;
 };
 
@@ -81,6 +82,7 @@ export function JoleneAgentButton() {
   const [context, setContext] = useState<JoleneContext | null>(null);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [confirmingPlan, setConfirmingPlan] = useState<string | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [listening, setListening] = useState(false);
@@ -209,6 +211,36 @@ export function JoleneAgentButton() {
       processedVoiceCommandRef.current = "";
     }
   }, [input, pathname, push, refresh, voiceEnabled]);
+
+  const handleConfirmation = useCallback(async (message: JoleneMessage, decision: "confirm" | "cancel") => {
+    const planId = message.actionJson?.confirmationPlanId;
+    if (!planId || confirmingPlan) return;
+
+    setError(null);
+    setConfirmingPlan(planId);
+    try {
+      const response = await fetch("/api/jolene/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messageId: message.id, confirmationPlanId: planId, decision }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error ?? "Jolene could not confirm that action.");
+
+      const updatedMessage = payload.updatedMessage as JoleneMessage | undefined;
+      const newMessages = (payload.messages ?? []) as JoleneMessage[];
+      setMessages((current) => {
+        const updated = current.map((item) => (updatedMessage && item.id === updatedMessage.id ? updatedMessage : item));
+        const additions = newMessages.filter((item) => item.id !== updatedMessage?.id && !updated.some((existing) => existing.id === item.id));
+        return [...updated, ...additions];
+      });
+      handleClientAction(payload.clientAction as JoleneClientAction | null | undefined, { push, refresh });
+    } catch (confirmationError) {
+      setError(confirmationError instanceof Error ? confirmationError.message : "Jolene could not confirm that action.");
+    } finally {
+      setConfirmingPlan(null);
+    }
+  }, [confirmingPlan, push, refresh]);
 
   const startHandsFreeRecognition = useCallback(() => {
     if (!speechSupported || typeof window === "undefined" || recognitionRef.current || loadingRef.current || speakingRef.current) return;
@@ -531,6 +563,18 @@ export function JoleneAgentButton() {
                           ))}
                         </Stack>
                       ) : null}
+                      {!isUser && message.actionJson?.plannedActions?.length ? (
+                        <JoleneActionPlan
+                          actionJson={message.actionJson}
+                          messageId={message.id}
+                          confirming={confirmingPlan === message.actionJson.confirmationPlanId}
+                          onConfirm={() => void handleConfirmation(message, "confirm")}
+                          onCancel={() => void handleConfirmation(message, "cancel")}
+                        />
+                      ) : null}
+                      {!isUser && message.actionJson?.executedActions?.length && !message.actionJson?.plannedActions?.length ? (
+                        <JoleneExecutedActions actionJson={message.actionJson} messageId={message.id} />
+                      ) : null}
                     </Paper>
                   </Box>
                 );
@@ -640,6 +684,7 @@ export function JoleneAgentButton() {
     </>
   );
 }
+
 
 function handleClientAction(action: JoleneClientAction | null | undefined, router: { push: (href: string) => void; refresh: () => void }) {
   if (!action) return;

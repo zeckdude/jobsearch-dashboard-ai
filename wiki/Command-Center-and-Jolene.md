@@ -93,7 +93,18 @@ Jolene must ask for confirmation before guarded actions:
 - repairing state, retrying/cancelling agent runs, or disabling learned rules
 - sending email/outreach, submitting applications, or interacting with external employer systems
 
-Operator activity is stored on Jolene messages as planned/executed actions so the UI and future agent-review surfaces can show what Jolene did, what she skipped, and what requires confirmation.
+Confirmed operator actions are shown as inline cards under Jolene messages. The user can confirm or cancel the exact plan Jolene proposed. Confirmed execution is intentionally limited to app-local internal repairs:
+
+- application integrity repair
+- duplicate/stale job detection
+- job-response email sync
+- Daily Command Center refresh
+- Market Intelligence refresh
+- graph-backed agent run repair, retry, or cancel when the plan includes a run id
+
+External actions are never executed by Jolene. Submitting applications, sending email or outreach, interacting with employer systems, and broad approve/reject/archive changes remain manual or page-routed even if Jolene can explain the plan.
+
+Operator activity is stored on Jolene messages as planned, confirmed, executed, skipped, failed, or cancelled actions so the UI and future agent-review surfaces can show what Jolene did, what she skipped, and what requires confirmation. `POST /api/jolene/confirm` validates the stored message plan, checks the internal-repairs boundary, rejects expired or mismatched plans, updates the source message, and appends an execution result message.
 
 ## Career-Aware Coaching
 
