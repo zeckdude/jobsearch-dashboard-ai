@@ -103,7 +103,13 @@ curl -X PATCH http://localhost:3000/api/jolene/mission \
   -H "content-type: application/json" \
   -d '{"targetCompensationMin":200000,"targetCompensationIdeal":260000,"horizonDays":30}'
 curl -X POST http://localhost:3000/api/jolene/career-brief
+curl http://localhost:3000/api/jolene/career-standup
+curl -X POST http://localhost:3000/api/jolene/career-standup
 ```
+
+Career CEO standups close the loop across days. `POST /api/jolene/career-standup` creates a `CareerSprintSnapshot` with the current brief, stable money-move statuses, sprint score, income momentum, attention debt, and completed move keys. `GET /api/jolene/career-standup` returns the latest snapshot. Ask Jolene for a "Career CEO standup," "sprint score," or "income momentum" to generate a new snapshot and get the top aging money move, income risks, and urgent next action.
+
+This repo also includes a local `development-agent` skill under `.agents/skills/development-agent`. Use it in future Codex sessions when you want the standard workflow: implement a plan, update README/wiki, run verification, commit, and push.
 
 With `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY`, the app emits redacted metadata traces for agent runs, OpenAI helper calls, the application assistant workflow, and graph-backed recruiting agency runs. Tracing is optional and fail-open: if LangSmith is unavailable, the app continues without tracing. The default trace payload masks resume text, cover letters, raw application answers, prompts, secrets, emails, phone numbers, and full field values while preserving useful debugging metadata such as workflow step, field label, field type, command type, result, status, model, and counts.
 

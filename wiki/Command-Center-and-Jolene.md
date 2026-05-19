@@ -138,11 +138,21 @@ Ask for a "Career CEO brief" or "money moves" to have Jolene rank the current sp
 - recommended sprint actions
 - confidence in the brief
 
+Career CEO standups close the loop across days. A standup creates a `CareerSprintSnapshot` from the current brief, compares it with the previous snapshot, and returns:
+
+- sprint score from current pipeline leverage and attention debt
+- income momentum: improving, flat, regressing, or insufficient data
+- attention debt from stale money moves and open blockers
+- stable money-move statuses: new, active, stale, completed, or superseded
+- proactive prompt reason when something needs immediate focus
+
 Mission APIs:
 
 - `GET /api/jolene/mission`
 - `PATCH /api/jolene/mission`
 - `POST /api/jolene/career-brief`
+- `GET /api/jolene/career-standup`
+- `POST /api/jolene/career-standup`
 
 ## Jolene Persistence
 

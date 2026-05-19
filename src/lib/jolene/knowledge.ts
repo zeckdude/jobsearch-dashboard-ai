@@ -28,6 +28,12 @@ export type JoleneKnowledgeItem = {
 export type JoleneGlobalContext = {
   checkedSources: JoleneKnowledgeSource[];
   mission?: CareerMissionSnapshot;
+  latestSprint?: {
+    sprintScore: number;
+    incomeMomentum: string;
+    attentionDebt: number;
+    createdAt: string;
+  } | null;
   pipeline: {
     jobsByStatus: Record<string, number>;
     applicationsByStatus: Record<string, number>;
@@ -76,6 +82,7 @@ export type JoleneGroundedAnswer = {
 export async function buildJoleneGlobalContext(userId: string): Promise<JoleneGlobalContext> {
   const [
     mission,
+    latestSprint,
     jobCounts,
     applicationCounts,
     openBlockers,
@@ -89,6 +96,7 @@ export async function buildJoleneGlobalContext(userId: string): Promise<JoleneGl
     outcomes,
   ] = await Promise.all([
     getOrCreateCareerMission(userId).then(serializeCareerMission),
+    prisma.careerSprintSnapshot.findFirst({ where: { userId }, orderBy: { createdAt: "desc" } }),
     prisma.jobProfileMatch.groupBy({
       by: ["status"],
       where: { jobSearchProfile: { userId } },
@@ -137,6 +145,14 @@ export async function buildJoleneGlobalContext(userId: string): Promise<JoleneGl
       "feedback",
     ],
     mission,
+    latestSprint: latestSprint
+      ? {
+          sprintScore: latestSprint.sprintScore,
+          incomeMomentum: latestSprint.incomeMomentum,
+          attentionDebt: latestSprint.attentionDebt,
+          createdAt: latestSprint.createdAt.toISOString(),
+        }
+      : null,
     pipeline: {
       jobsByStatus: countsByStatus(jobCounts),
       applicationsByStatus,
@@ -378,6 +394,7 @@ export function synthesizeJoleneGroundedAnswer({
 function knownFacts(globalContext: JoleneGlobalContext, retrievedItems: JoleneKnowledgeItem[]) {
   const facts = [
     globalContext.mission ? `Career mission: ${careerMissionSummary(globalContext.mission)}` : "Career mission is not set.",
+    globalContext.latestSprint ? `Latest sprint snapshot: score ${globalContext.latestSprint.sprintScore}/100, momentum ${globalContext.latestSprint.incomeMomentum}, attention debt ${globalContext.latestSprint.attentionDebt}.` : "No career sprint snapshot exists yet.",
     `${globalContext.pipeline.openBlockers} open blocker(s), ${globalContext.pipeline.packetsNeedingReview} packet(s) needing review, ${globalContext.pipeline.activeApplications} active pre-submit application(s), and ${globalContext.pipeline.submittedApplications} submitted or outcome-bearing application(s).`,
     `${globalContext.search.enabledProfiles} enabled search profile(s), ${globalContext.search.disabledProfiles} disabled profile(s), and ${globalContext.search.scheduledProfiles} scheduled profile(s).`,
     globalContext.search.latestRun

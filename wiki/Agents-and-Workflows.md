@@ -12,6 +12,8 @@ Jolene's ADK operator can now render inline confirmation cards for app-local rep
 
 Career CEO mode adds a persistent hiring mandate for Jolene. `CareerMission` stores the 30-day high-income sprint target, compensation floor, ideal target, role tracks, dealbreakers, fallback paths, daily capacity, and tone preferences. Jolene's Career CEO brief ranks the current pipeline by income relevance using interviews, ready applications, high-score jobs, follow-ups, blockers, enabled profiles, salary gaps, and mission targets.
 
+Career CEO standups add the closed-loop layer. `CareerSprintSnapshot` persists daily sprint score, income momentum, attention debt, money-move statuses, completed move keys, mission JSON, and the brief JSON. Jolene can generate a new standup on demand, compare against the latest snapshot, identify stale money moves, and explain what needs immediate attention without taking external action.
+
 ## Agent Run Observability
 
 `AgentRun` stores:

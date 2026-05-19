@@ -35,6 +35,7 @@ vi.mock("@/lib/prisma", () => ({
     agentRun: { count: vi.fn(), findMany: vi.fn() },
     agentUserRequest: { count: vi.fn() },
     careerMission: { create: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
+    careerSprintSnapshot: { create: vi.fn(), findFirst: vi.fn() },
     jobProfileMatch: { findMany: vi.fn(), groupBy: vi.fn() },
     jobPosting: { findMany: vi.fn(), groupBy: vi.fn() },
     jobSearchProfile: { findMany: vi.fn() },
@@ -86,6 +87,8 @@ describe("executeJoleneAction", () => {
     } as never);
     vi.mocked(prisma.careerMission.create).mockResolvedValue({} as never);
     vi.mocked(prisma.careerMission.update).mockResolvedValue({} as never);
+    vi.mocked(prisma.careerSprintSnapshot.create).mockResolvedValue({ id: "snapshot_1" } as never);
+    vi.mocked(prisma.careerSprintSnapshot.findFirst).mockResolvedValue(null as never);
     vi.mocked(prisma.jobProfileMatch.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.jobProfileMatch.groupBy).mockResolvedValue([] as never);
     vi.mocked(prisma.jobPosting.findMany).mockResolvedValue([] as never);
@@ -490,6 +493,44 @@ describe("executeJoleneAction", () => {
     });
     expect(result.reply).toContain("Career CEO brief");
     expect(result.reply).toContain("Money moves");
+  });
+
+  it("returns a closed-loop Career CEO standup", async () => {
+    const { prisma } = await import("@/lib/prisma");
+    vi.mocked(prisma.application.findMany)
+      .mockResolvedValueOnce([
+        {
+          id: "app_ready",
+          status: "ready_to_apply",
+          updatedAt: new Date("2026-05-19T12:00:00.000Z"),
+          jobPosting: {
+            id: "job_ready",
+            company: "Acme AI",
+            title: "Staff AI Product Engineer",
+            salaryMin: 200000,
+            salaryMax: 260000,
+          },
+          jobProfileMatch: { overallScore: 92 },
+        },
+      ] as never)
+      .mockResolvedValueOnce([] as never)
+      .mockResolvedValueOnce([] as never);
+    vi.mocked(prisma.jobProfileMatch.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.jobSearchProfile.findMany).mockResolvedValue([
+      { id: "profile_1", name: "Staff Frontend", salaryMin: 180000, salaryMax: 260000, salaryCurrency: "USD", minimumMatchScore: 85 },
+    ] as never);
+
+    const result = await executeJoleneAction("Give me the Career CEO standup and sprint score.", { userId: "user_1" });
+
+    expect(result.handled).toBe(true);
+    expect(result.actionJson).toMatchObject({
+      action: "career_ceo_standup",
+      sprintScore: expect.any(Number),
+      incomeMomentum: "insufficient_data",
+      moneyMoveStatus: expect.arrayContaining([expect.objectContaining({ status: "new" })]),
+    });
+    expect(result.reply).toContain("Career CEO standup");
+    expect(prisma.careerSprintSnapshot.create).toHaveBeenCalled();
   });
 });
 

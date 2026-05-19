@@ -4,6 +4,7 @@ import { startJobSearchRun } from "@/lib/job-search/start-run";
 import { executeJoleneAdkOperator, type JoleneOperatorAction } from "@/lib/jolene/adk-operator";
 import { executeJoleneCareerCoaching, isLikelyPastedInterviewPrompt } from "@/lib/jolene/career-coach";
 import { buildCareerCeoBrief, formatCareerCeoBrief } from "@/lib/jolene/career-ceo";
+import { buildCareerStandup, formatCareerStandup } from "@/lib/jolene/career-standup";
 import {
   buildJoleneGlobalContext,
   retrieveJoleneKnowledge,
@@ -42,6 +43,23 @@ export async function executeJoleneAction(message: string, options: { userId?: s
 
   const coaching = await executeJoleneCareerCoaching(message, options);
   if (coaching.handled) return coaching;
+
+  if (options.userId && isCareerStandupIntent(message)) {
+    const standup = await buildCareerStandup(options.userId, { persist: true });
+    return {
+      handled: true,
+      reply: formatCareerStandup(standup),
+      actionJson: {
+        action: "career_ceo_standup",
+        careerStandup: standup,
+        sprintScore: standup.sprintScore,
+        incomeMomentum: standup.incomeMomentum,
+        attentionDebt: standup.attentionDebt,
+        moneyMoveStatus: standup.moneyMoveStatus,
+        proactivePromptReason: standup.proactivePromptReason,
+      },
+    };
+  }
 
   if (options.userId && isCareerCeoBriefIntent(message)) {
     const brief = await buildCareerCeoBrief(options.userId);
@@ -168,6 +186,11 @@ export async function executeJoleneAction(message: string, options: { userId?: s
 function isCareerCeoBriefIntent(message: string) {
   const normalized = normalize(message);
   return /\b(career ceo|ceo brief|career brief|money moves|income sprint|high income sprint|maximize income|career mission)\b/.test(normalized);
+}
+
+function isCareerStandupIntent(message: string) {
+  const normalized = normalize(message);
+  return /\b(career standup|ceo standup|daily standup|sprint score|income momentum|attention debt|closed loop)\b/.test(normalized);
 }
 
 function parseIntent(message: string) {

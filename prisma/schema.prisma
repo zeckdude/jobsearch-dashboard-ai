@@ -427,6 +427,7 @@ model User {
   agentQualityEvaluations AgentQualityEvaluation[]
   agentImprovementProposals AgentImprovementProposal[]
   careerMission        CareerMission?
+  careerSprintSnapshots CareerSprintSnapshot[]
   contacts             Contact[]
   coverLetters         GeneratedCoverLetter[]
   emailMessages        EmailMessageRecord[]
@@ -468,6 +469,23 @@ model CareerMission {
   createdAt                DateTime @default(now())
   updatedAt                DateTime @updatedAt
   user                     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model CareerSprintSnapshot {
+  id                 String   @id @default(cuid())
+  userId             String
+  missionJson        Json     @default("{}")
+  briefJson          Json     @default("{}")
+  moneyMovesJson     Json     @default("[]")
+  sprintScore        Int      @default(0)
+  incomeMomentum     String   @default("insufficient_data")
+  attentionDebt      Int      @default(0)
+  completedMoveKeys  Json     @default("[]")
+  createdAt          DateTime @default(now())
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, incomeMomentum, createdAt])
 }
 
 model OutcomeCalibrationSnapshot {
