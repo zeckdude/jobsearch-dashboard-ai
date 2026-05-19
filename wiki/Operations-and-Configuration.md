@@ -147,6 +147,7 @@ This checks that key app pages render against a running local server.
 - Prefer deterministic fallbacks when provider keys are missing.
 - Avoid destructive changes without explicit user approval.
 - Keep LangGraph and LangChain imports out of generic route/module top levels. Import them lazily inside server-only workflow construction so Next.js RSC bundles for unrelated API routes do not include `@langchain/*`.
+- ADK is opt-in with `ADK_ENABLED=true` and `ADK_MODEL`. Keep `@google/adk` loading behind the server-side adapter/control plane and do not move durable assistant or recruiting-agency workflows to ADK until checkpoint, resume, repair, and browser lifecycle behavior are proven equivalent.
 - Treat `ApplicationAutomationRun.workflowStateJson` as the UI projection of assistant workflow state, and `AgentRun.workflowStateJson` as the projection for graph-backed agents such as the recruiting agency. LangGraph checkpointing is the durable graph state layer.
 - Treat assistant browser lifecycle events as the source of truth for terminal assistant state: submit confirmation and submit-click-then-close become applied, while close-before-submit becomes `NEEDS_USER` with `assistant_closed`.
 - Treat application outcomes as canonical across duplicate trackers. When any duplicate tracker reaches a submitted status, archive stale approved/ready duplicates and sync sibling job matches.

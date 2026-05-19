@@ -1,4 +1,6 @@
 import type { AgentRun, AgentType, Prisma } from "@prisma/client";
+import { adkObservabilityMetadata, agentRuntimeSource } from "@/lib/adk/registry";
+import { runWithAdkControlPlane } from "@/lib/adk/runtime";
 import { langSmithTraceMetadata, sanitizeTraceInput, sanitizeTraceOutput, traceAgentOperation } from "@/lib/observability/langsmith";
 import { prisma } from "@/lib/prisma";
 
@@ -15,12 +17,17 @@ export type AgentResult<TOutput> = {
 };
 
 export async function runAgent<TInput, TOutput>({ agentType, input, userId, execute }: RunAgentInput<TInput, TOutput>): Promise<AgentResult<TOutput>> {
+  const adkMetadata = adkObservabilityMetadata(agentType);
   const run = await prisma.agentRun.create({
     data: {
       agentType,
       userId: userId ?? undefined,
       inputJson: toJsonValue(input),
-      observabilityJson: langSmithTraceMetadata(),
+      observabilityJson: {
+        ...(langSmithTraceMetadata() as Record<string, unknown>),
+        runtime: adkMetadata ? "adk" : "service",
+        ...(adkMetadata ? { adk: adkMetadata } : {}),
+      } as Prisma.InputJsonValue,
       status: "RUNNING",
     },
   });
@@ -34,7 +41,7 @@ export async function runAgent<TInput, TOutput>({ agentType, input, userId, exec
         userId: userId ?? null,
         input: sanitizeTraceInput(input),
       },
-      () => execute(run),
+      () => runWithAdkControlPlane({ run, execute: () => execute(run) }),
     );
     const completed = await prisma.agentRun.update({
       where: { id: run.id },
@@ -42,6 +49,8 @@ export async function runAgent<TInput, TOutput>({ agentType, input, userId, exec
         outputJson: toJsonValue(output),
         observabilityJson: {
           ...(langSmithTraceMetadata() as Record<string, unknown>),
+          runtime: agentRuntimeSource(agentType),
+          ...(adkMetadata ? { adk: adkMetadata } : {}),
           lastOutput: sanitizeTraceOutput(output),
         } as Prisma.InputJsonValue,
         status: "COMPLETED",
@@ -57,6 +66,8 @@ export async function runAgent<TInput, TOutput>({ agentType, input, userId, exec
         error: error instanceof Error ? error.message : "Unknown agent failure",
         observabilityJson: {
           ...(langSmithTraceMetadata() as Record<string, unknown>),
+          runtime: agentRuntimeSource(agentType),
+          ...(adkMetadata ? { adk: adkMetadata } : {}),
           error: error instanceof Error ? error.message : "Unknown agent failure",
         } as Prisma.InputJsonValue,
       },

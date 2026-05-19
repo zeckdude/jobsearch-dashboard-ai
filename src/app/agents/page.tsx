@@ -68,6 +68,16 @@ type AgentOutput = {
   };
 };
 
+type AgentRunObservability = {
+  runtime?: "service" | "langgraph" | "adk";
+  adk?: {
+    agentId?: string;
+    model?: string;
+    risk?: string;
+    tools?: string[];
+  };
+};
+
 export default async function AgentReviewBoardPage() {
   const [runs, evidenceNeedsReview, jobEvaluations, profileOptimizerRun, dailyPlanRun, resumesNeedingReview, coverLettersNeedingReview] = await Promise.all([
     prisma.agentRun.findMany({
@@ -346,6 +356,7 @@ export default async function AgentReviewBoardPage() {
               ) : (
                 runs.map((run) => {
                   const output = outputObject(run.outputJson);
+                  const observability = observabilityObject(run.observabilityJson);
                   const controls = graphRunControlState(run);
                   return (
                     <TableRow key={run.id} hover>
@@ -363,9 +374,16 @@ export default async function AgentReviewBoardPage() {
                       <TableCell sx={{ maxWidth: 220 }}>
                         {controls.supported ? (
                           <Stack spacing={0.5}>
+                            <Chip size="small" color="info" variant="outlined" label="LangGraph" />
                             <Chip size="small" color="info" variant="outlined" label={workflowNodeLabel(run.currentNode)} />
                             <Typography variant="caption" color="text.secondary">{run.workflowVersion}</Typography>
                             <Typography variant="caption" color="text.secondary">{run.graphThreadId}</Typography>
+                          </Stack>
+                        ) : observability?.runtime === "adk" ? (
+                          <Stack spacing={0.5}>
+                            <Chip size="small" color="secondary" variant="outlined" label="ADK control plane" />
+                            <Typography variant="caption" color="text.secondary">{observability.adk?.agentId}</Typography>
+                            <Typography variant="caption" color="text.secondary">{observability.adk?.model}</Typography>
                           </Stack>
                         ) : (
                           <Typography variant="caption" color="text.secondary">Standard agent run</Typography>
@@ -516,6 +534,10 @@ function SectionTitle({ title, action }: { title: string; action?: React.ReactNo
 
 function outputObject(value: unknown): AgentOutput | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as AgentOutput : null;
+}
+
+function observabilityObject(value: unknown): AgentRunObservability | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as AgentRunObservability : null;
 }
 
 function agentSummary(output: AgentOutput | null) {
