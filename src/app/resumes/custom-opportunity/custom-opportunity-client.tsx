@@ -46,20 +46,34 @@ const emptyDetails: OpportunityDetails = {
   applicationUrl: "",
 };
 
+type CustomOpportunityState = {
+  description: string;
+  details: OpportunityDetails;
+  result: GenerateResponse | null;
+  notice: string;
+  error: string;
+  inferring: boolean;
+  generating: boolean;
+  saving: boolean;
+  editedResume: string;
+};
+
 export function CustomOpportunityClient() {
-  const [description, setDescription] = useState("");
-  const [details, setDetails] = useState<OpportunityDetails>(emptyDetails);
-  const [result, setResult] = useState<GenerateResponse | null>(null);
-  const [notice, setNotice] = useState("");
-  const [error, setError] = useState("");
-  const [inferring, setInferring] = useState(false);
-  const [generating, setGenerating] = useState(false);
+  const [state, setState] = useState<CustomOpportunityState>({
+    description: "",
+    details: emptyDetails,
+    result: null,
+    notice: "",
+    error: "",
+    inferring: false,
+    generating: false,
+    saving: false,
+    editedResume: "",
+  });
+  const { description, details, result, notice, error, inferring, generating, saving, editedResume } = state;
 
   async function inferDetails() {
-    setInferring(true);
-    setNotice("");
-    setError("");
-    setResult(null);
+    setState((current) => ({ ...current, inferring: true, notice: "", error: "", result: null }));
 
     try {
       const response = await fetch("/api/resumes/custom-opportunity/infer", {
@@ -70,27 +84,27 @@ export function CustomOpportunityClient() {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? "Unable to extract details.");
 
-      setDetails({
-        company: payload.details.company ?? details.company ?? "",
-        title: payload.details.title ?? details.title ?? "",
-        location: payload.details.location ?? details.location ?? "",
-        remoteType: payload.details.remoteType ?? details.remoteType ?? "unknown",
-        applicationUrl: payload.details.applicationUrl ?? details.applicationUrl ?? "",
-      });
-      setNotice("Opportunity details extracted.");
+      setState((current) => ({
+        ...current,
+        details: {
+          company: payload.details.company ?? current.details.company ?? "",
+          title: payload.details.title ?? current.details.title ?? "",
+          location: payload.details.location ?? current.details.location ?? "",
+          remoteType: payload.details.remoteType ?? current.details.remoteType ?? "unknown",
+          applicationUrl: payload.details.applicationUrl ?? current.details.applicationUrl ?? "",
+        },
+        notice: "Opportunity details extracted.",
+      }));
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to extract details.");
+      setState((current) => ({ ...current, error: caught instanceof Error ? caught.message : "Unable to extract details." }));
     } finally {
-      setInferring(false);
+      setState((current) => ({ ...current, inferring: false }));
     }
   }
 
   async function generateResume(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setGenerating(true);
-    setNotice("");
-    setError("");
-    setResult(null);
+    setState((current) => ({ ...current, generating: true, notice: "", error: "", result: null }));
 
     try {
       const response = await fetch("/api/resumes/custom-opportunity/generate", {
@@ -108,13 +122,43 @@ export function CustomOpportunityClient() {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? "Unable to generate resume.");
 
-      setResult(payload);
-      setDetails(payload.inferredDetails);
-      setNotice(payload.message ?? "Custom opportunity resume generated.");
+      setState((current) => ({
+        ...current,
+        result: payload,
+        editedResume: payload.resumePreview,
+        details: payload.inferredDetails,
+        notice: payload.message ?? "Custom opportunity resume generated.",
+      }));
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to generate resume.");
+      setState((current) => ({ ...current, error: caught instanceof Error ? caught.message : "Unable to generate resume." }));
     } finally {
-      setGenerating(false);
+      setState((current) => ({ ...current, generating: false }));
+    }
+  }
+
+  async function saveResumeEdits() {
+    if (!result) return;
+    setState((current) => ({ ...current, saving: true, notice: "", error: "" }));
+
+    try {
+      const response = await fetch(`/api/resumes/generated/${result.resumeId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ content: editedResume }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error ?? "Unable to save resume.");
+
+      setState((current) => ({
+        ...current,
+        result: current.result ? { ...current.result, resumePreview: payload.resume?.plainText ?? current.editedResume } : current.result,
+        editedResume: payload.resume?.plainText ?? current.editedResume,
+        notice: payload.message ?? "Resume saved.",
+      }));
+    } catch (caught) {
+      setState((current) => ({ ...current, error: caught instanceof Error ? caught.message : "Unable to save resume." }));
+    } finally {
+      setState((current) => ({ ...current, saving: false }));
     }
   }
 
@@ -139,7 +183,7 @@ export function CustomOpportunityClient() {
                 minRows={10}
                 label="Recruiter role brief"
                 value={description}
-                onChange={(event) => setDescription(event.target.value)}
+                onChange={(event) => setState((current) => ({ ...current, description: event.target.value }))}
               />
               <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
                 <TextField fullWidth label="Company" value={details.company ?? ""} onChange={(event) => setDetail("company", event.target.value)} />
@@ -190,6 +234,16 @@ export function CustomOpportunityClient() {
                     </Typography>
                   </Box>
                   <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
+                    <Button
+                      type="button"
+                      variant="contained"
+                      color="success"
+                      disabled={saving}
+                      startIcon={saving ? <CircularProgress color="inherit" size={16} thickness={5} /> : undefined}
+                      onClick={() => void saveResumeEdits()}
+                    >
+                      {saving ? "Saving..." : "Save edits"}
+                    </Button>
                     <Button component={Link} href={result.textUrl} variant="outlined" startIcon={<OpenInNewOutlinedIcon />}>Text</Button>
                     <Button component={Link} href={result.pdfUrl} variant="contained" startIcon={<DownloadOutlinedIcon />}>PDF</Button>
                     <Button component={Link} href={result.jobUrl} variant="outlined">Open job</Button>
@@ -198,23 +252,21 @@ export function CustomOpportunityClient() {
                 {result.warnings.length ? (
                   <Alert severity="warning">{result.warnings.join(" ")}</Alert>
                 ) : null}
-                <Typography
-                  component="pre"
+                <TextField
+                  fullWidth
+                  multiline
+                  minRows={22}
+                  label="Editable resume"
+                  value={editedResume}
+                  onChange={(event) => setState((current) => ({ ...current, editedResume: event.target.value }))}
                   sx={{
-                    whiteSpace: "pre-wrap",
-                    fontFamily: "inherit",
-                    m: 0,
-                    p: 2,
-                    bgcolor: "rgba(15, 23, 42, 0.04)",
-                    border: "1px solid",
-                    borderColor: "divider",
-                    borderRadius: 1,
-                    maxHeight: 620,
-                    overflow: "auto",
+                    "& .MuiInputBase-input": {
+                      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                      fontSize: 13,
+                      lineHeight: 1.6,
+                    },
                   }}
-                >
-                  {result.resumePreview}
-                </Typography>
+                />
               </Stack>
             </CardContent>
           </Card>
@@ -224,6 +276,6 @@ export function CustomOpportunityClient() {
   );
 
   function setDetail(key: keyof OpportunityDetails, value: string) {
-    setDetails((current) => ({ ...current, [key]: value }));
+    setState((current) => ({ ...current, details: { ...current.details, [key]: value } }));
   }
 }

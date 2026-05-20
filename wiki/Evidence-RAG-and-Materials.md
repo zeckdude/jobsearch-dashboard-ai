@@ -127,7 +127,11 @@ Writing rules:
 
 The `/resumes/custom-opportunity` page handles recruiter outreach that arrives as a short brief instead of a saved job posting. It extracts editable opportunity details from the pasted text, saves the brief as a `Recruiter Opportunity` job source, ensures the role has a usable profile match, and generates a resume-only tailored material.
 
-Custom opportunity resumes use the same truthfulness path as normal job resumes: approved candidate profile data, verified experience bullets, projects, GitHub context, resume strategy, ATS checks, and application QA notes. They appear in Generated Materials and export through the standard text and PDF resume endpoints.
+Custom opportunity resumes use the same truthfulness path as normal job resumes: approved candidate profile data, verified experience bullets, projects, GitHub context, resume strategy, ATS checks, and application QA notes. For MCP, integration, workflow automation, and AI tooling briefs, the generator also emphasizes verified Job Search OS stack terms in Summary and Skills, including MCP, agentic workflows, RAG, Next.js, React, TypeScript, Prisma/Postgres, pgvector, LangGraph, LangSmith-style observability, browser automation, email outcome tracking, and application state reconciliation when those terms are supported by approved evidence.
+
+Requested but unsupported systems, such as Salesforce, Gong, ZoomInfo, Ironclad, Harvey AI, SimpleLegal, Logikcull, Airtable, or Snowflake, are not added as claimed skills unless approved evidence supports them. They are recorded as warnings/metadata so the user can decide whether to edit the resume manually.
+
+After generation, the custom opportunity page lets the user edit and save the resume content. Saved edits update the generated resume record, refresh ATS checks, and keep the standard text and PDF export URLs pointed at the edited version. Generated resumes also appear in Generated Materials.
 
 The workflow intentionally does not create an application tracker, cover letter, or packet. If the opportunity becomes an active application, open the saved job and use the normal package workflow.
 

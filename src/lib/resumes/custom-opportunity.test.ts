@@ -76,14 +76,114 @@ describe("custom opportunity resumes", () => {
 
   it("infers details heuristically when structured output is unavailable", async () => {
     const details = await inferCustomOpportunityDetails(
-      "Role: Senior Frontend Engineer\nCompany: Acme\nLocation: Remote US\nBuild React and TypeScript interfaces.",
+      "Sr. Integration Engineer Needed ASAP\nCompany: Acme\nLocation: Remote US\nSet up and implement Model Context Protocol integrations.",
     );
 
     expect(details).toMatchObject({
       company: "Acme",
-      title: "Senior Frontend Engineer",
+      title: "Sr. Integration Engineer",
       location: "Remote US",
       remoteType: "remote",
+    });
+  });
+
+  it("emphasizes supported app stack for MCP integration briefs without claiming unsupported systems", async () => {
+    const job = {
+      id: "job_1",
+      company: "Prosum Client",
+      title: "Sr. Integration Engineer",
+      description: "Set up and implement Model Context Protocol (MCP). Integrate with Salesforce, Gong, Snowflake, and legal workflow systems.",
+      location: "Austin or Carpinteria",
+    };
+    const match = { id: "match_1", jobPostingId: "job_1", jobSearchProfileId: "profile_1", overallScore: 84 };
+    const resume = {
+      id: "resume_1",
+      userId: "user_1",
+      jobPostingId: "job_1",
+      jobProfileMatchId: "match_1",
+      markdown: "# Carl",
+      plainText: "Carl\nGenerated resume body.",
+      generationNotes: { warnings: [] },
+    };
+    captureManualJobMock.mockResolvedValue({ job, matches: [match], created: true } as unknown as Awaited<ReturnType<typeof captureManualJob>>);
+    vi.mocked(prisma.jobProfileMatch.findFirst).mockResolvedValue(match as Awaited<ReturnType<typeof prisma.jobProfileMatch.findFirst>>);
+    vi.mocked(prisma.jobPosting.findUnique).mockResolvedValue(job as Awaited<ReturnType<typeof prisma.jobPosting.findUnique>>);
+    vi.mocked(prisma.user.findFirst).mockResolvedValue({
+      id: "user_1",
+      profile: {
+        masterSummary: "Product engineer.",
+        professionalSummary: "Product engineer.",
+        coreSkills: ["React", "TypeScript", "Next.js"],
+        technicalSkills: ["Prisma", "Postgres", "pgvector", "LangGraph"],
+        experienceBullets: [],
+        projects: [{
+          name: "Job Search OS",
+          description: "Agentic job search assistant with Model Context Protocol (MCP), RAG, LangSmith-style observability, browser automation, email outcome tracking, and application state reconciliation.",
+          technologies: ["Next.js", "React", "TypeScript", "Prisma", "Postgres", "pgvector", "LangGraph"],
+          highlights: [],
+        }],
+        githubRepositories: [],
+        resumeUploads: [],
+        workExperiences: [],
+      },
+    } as unknown as Awaited<ReturnType<typeof prisma.user.findFirst>>);
+    tailorResumeForJobMock.mockResolvedValue({
+      tailoredSummary: "Tailored summary.",
+      selectedSkills: [],
+      markdownResume: [
+        "# Carl Welch",
+        "",
+        "## Summary",
+        "Senior product engineer.",
+        "",
+        "## Skills",
+        "React, TypeScript",
+        "",
+        "## Professional Experience",
+        "- Built product systems.",
+      ].join("\n"),
+      plainTextResume: [
+        "Carl Welch",
+        "",
+        "Summary",
+        "Senior product engineer.",
+        "",
+        "Skills",
+        "React, TypeScript",
+        "",
+        "Professional Experience",
+        "- Built product systems.",
+      ].join("\n"),
+      selectedExperienceBullets: [],
+      projectSelections: [],
+      keywordAlignment: {},
+      warnings: [],
+      unsupportedClaimsDetected: [],
+      validation: null,
+      generatedBy: "deterministic_fallback",
+    } as unknown as Awaited<ReturnType<typeof tailorResumeForJob>>);
+    vi.mocked(prisma.generatedResume.create).mockResolvedValue(resume as unknown as Awaited<ReturnType<typeof prisma.generatedResume.create>>);
+    vi.mocked(prisma.generatedResume.update).mockResolvedValue(resume as unknown as Awaited<ReturnType<typeof prisma.generatedResume.update>>);
+    vi.mocked(prisma.jobProfileMatch.update).mockResolvedValue(match as Awaited<ReturnType<typeof prisma.jobProfileMatch.update>>);
+
+    await generateCustomOpportunityResume({
+      description: job.description,
+      company: job.company,
+      title: job.title,
+      location: job.location,
+      remoteType: "hybrid",
+    });
+
+    const createCall = vi.mocked(prisma.generatedResume.create).mock.calls[0]?.[0];
+    expect(createCall?.data.plainText).toContain("Model Context Protocol (MCP)");
+    expect(createCall?.data.plainText).toContain("LangGraph");
+    expect(createCall?.data.plainText).not.toMatch(/\bSalesforce\b/);
+    expect(createCall?.data.plainText).not.toMatch(/\bSnowflake\b/);
+    expect(createCall?.data.generationNotes).toMatchObject({
+      customOpportunityEmphasis: {
+        supportedStackTerms: expect.arrayContaining(["Model Context Protocol (MCP)", "LangGraph"]),
+        unsupportedRequestedSystems: expect.arrayContaining(["Salesforce", "Snowflake"]),
+      },
     });
   });
 

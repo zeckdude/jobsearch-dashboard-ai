@@ -10,6 +10,34 @@ import { prisma } from "@/lib/prisma";
 import { checkAtsReadability } from "@/lib/resumes/ats";
 
 const sourceName = "Recruiter Opportunity";
+const integrationSignalPattern = /\b(mcp|model context protocol|integration|integrate|systems?|api|salesforce|gong|zoominfo|ironclad|clm|legal workflow|harvey|simplelegal|logikcull|airtable|snowflake|data platform|workflow|automation)\b/i;
+const supportedIntegrationStack = [
+  "Model Context Protocol (MCP)",
+  "agentic workflows",
+  "RAG",
+  "Next.js",
+  "React",
+  "TypeScript",
+  "Prisma",
+  "Postgres",
+  "pgvector",
+  "LangGraph",
+  "LangSmith-style observability",
+  "browser automation",
+  "email outcome tracking",
+  "application state reconciliation",
+];
+const requestedThirdPartySystems = [
+  "Salesforce",
+  "Gong",
+  "ZoomInfo",
+  "Ironclad",
+  "Harvey AI",
+  "SimpleLegal",
+  "Logikcull",
+  "Airtable",
+  "Snowflake",
+];
 
 export const customOpportunityInferSchema = z.object({
   description: z.string().trim().min(30, "Paste at least a short recruiter role description.").max(100000),
@@ -170,6 +198,19 @@ async function createGeneratedResumeForMatch(jobPostingId: string, jobProfileMat
     : [];
   const parsedUpload = user.profile.resumeUploads[0]?.parsedJson as { education?: string[]; certifications?: string[] } | undefined;
   const bullets = uploadBullets.length >= 8 ? uploadBullets : user.profile.experienceBullets;
+  const emphasis = buildCustomOpportunityEmphasis({
+    description: job.description,
+    profileText: [
+      user.profile.masterSummary,
+      user.profile.professionalSummary,
+      user.profile.coreSkills,
+      user.profile.technicalSkills,
+      user.profile.experienceBullets.map((bullet) => [bullet.text, bullet.keywords, bullet.sourceText].flat().join(" ")),
+      user.profile.projects.map((project) => [project.name, project.description, project.technologies, project.highlights].flat().join(" ")),
+      user.profile.githubRepositories.map((repo) => [repo.name, repo.fullName, repo.description, repo.language, repo.topics].flat().join(" ")),
+      user.profile.workExperiences.map((work) => [work.company, work.title, work.summary, work.skills, work.achievements].flat().join(" ")),
+    ].flat().filter(Boolean).join(" "),
+  });
   const tailored = await tailorResumeForJob({
     userProfile: user.profile,
     job,
@@ -180,25 +221,31 @@ async function createGeneratedResumeForMatch(jobPostingId: string, jobProfileMat
     education: Array.isArray(parsedUpload?.education) ? parsedUpload.education : [],
     certifications: Array.isArray(parsedUpload?.certifications) ? parsedUpload.certifications : [],
   });
-  const atsChecks = checkAtsReadability(tailored.plainTextResume);
+  const emphasized = applyCustomOpportunityEmphasis(tailored, job, emphasis);
+  const atsChecks = checkAtsReadability(emphasized.plainTextResume);
   const resume = await prisma.generatedResume.create({
     data: {
       userId: user.id,
       jobPostingId: job.id,
       jobProfileMatchId,
       resumeUploadId: latestUploadId ?? null,
-      markdown: tailored.markdownResume,
-      plainText: tailored.plainTextResume,
-      html: `<pre>${escapeHtml(tailored.plainTextResume)}</pre>`,
-      selectedBulletIds: tailored.selectedExperienceBullets.map((selection) => selection.bulletId) as Prisma.InputJsonValue,
-      keywordAlignment: tailored.keywordAlignment as Prisma.InputJsonValue,
+      markdown: emphasized.markdownResume,
+      plainText: emphasized.plainTextResume,
+      html: `<pre>${escapeHtml(emphasized.plainTextResume)}</pre>`,
+      selectedBulletIds: emphasized.selectedExperienceBullets.map((selection) => selection.bulletId) as Prisma.InputJsonValue,
+      keywordAlignment: emphasized.keywordAlignment as Prisma.InputJsonValue,
       generationNotes: {
-        generatedBy: tailored.generatedBy,
-        warnings: tailored.warnings,
-        unsupportedClaimsDetected: tailored.unsupportedClaimsDetected,
-        validation: tailored.validation,
-        selectedExperienceBullets: tailored.selectedExperienceBullets,
-        projectSelections: tailored.projectSelections,
+        generatedBy: emphasized.generatedBy,
+        warnings: [...emphasized.warnings, ...emphasis.warnings],
+        unsupportedClaimsDetected: emphasized.unsupportedClaimsDetected,
+        validation: emphasized.validation,
+        selectedExperienceBullets: emphasized.selectedExperienceBullets,
+        projectSelections: emphasized.projectSelections,
+        customOpportunityEmphasis: emphasis.enabled ? {
+          focus: emphasis.focus,
+          supportedStackTerms: emphasis.supportedStackTerms,
+          unsupportedRequestedSystems: emphasis.unsupportedRequestedSystems,
+        } : null,
         resumeStrategy: strategy,
         customOpportunity: true,
       } as Prisma.InputJsonValue,
@@ -223,7 +270,8 @@ function inferCustomOpportunityDetailsHeuristically(description: string): Custom
   const firstLine = lines[0] ?? "";
   const titleMatch =
     description.match(/\b(?:role|position|opening|opportunity|job title)\s*[:\-]\s*([^\n.]+)/i) ??
-    firstLine.match(/\b((?:Senior|Staff|Principal|Lead)?\s*(?:Frontend|Front End|Full Stack|Software|Product|AI|Platform|UI|Web)[^\n,.;]{0,80}(?:Engineer|Developer|Architect|Lead))\b/i);
+    firstLine.match(/\b((?:Sr\.?|Senior|Staff|Principal|Lead)?\s*(?:Integration|Systems Integration|MCP|Frontend|Front End|Full Stack|Software|Product|AI|Platform|UI|Web)[^\n,.;]{0,80}(?:Engineer|Developer|Architect|Lead))\b/i) ??
+    description.match(/\b((?:Sr\.?|Senior|Staff|Principal|Lead)?\s*(?:Integration|Systems Integration|MCP)\s+Engineer)\b/i);
   const companyMatch =
     description.match(/\b(?:company|client)\s*[:\-]\s*([^\n.]+)/i) ??
     description.match(/\bat\s+([A-Z][A-Za-z0-9&.\- ]{2,80})(?:\s+is|\s+has|\s+for|\s*,|\s*\.)/);
@@ -281,6 +329,125 @@ function warningStrings(notes: Prisma.JsonValue): string[] {
     ...stringArray(values.warnings),
     ...stringArray(values.unsupportedClaimsDetected).map((item) => `Unsupported claim: ${item}`),
   ];
+}
+
+function buildCustomOpportunityEmphasis({ description, profileText }: { description: string; profileText: string }) {
+  const enabled = integrationSignalPattern.test(description);
+  const supportedStackTerms = enabled ? supportedIntegrationStack.filter((term) => hasSourceSupport(profileText, term)) : [];
+  const unsupportedRequestedSystems = requestedThirdPartySystems.filter((system) => {
+    if (!description.toLowerCase().includes(system.toLowerCase())) return false;
+    return !hasSourceSupport(profileText, system);
+  });
+
+  return {
+    enabled,
+    focus: enabled ? "MCP and integration architecture for AI-enabled business workflows" : null,
+    supportedStackTerms,
+    unsupportedRequestedSystems,
+    warnings: unsupportedRequestedSystems.map((system) => `Requested system not added as a claimed skill because it is not verified in approved evidence: ${system}.`),
+  };
+}
+
+function applyCustomOpportunityEmphasis<T extends {
+  markdownResume: string;
+  plainTextResume: string;
+  keywordAlignment: unknown;
+}>(tailored: T, job: Pick<JobPosting, "title" | "description">, emphasis: ReturnType<typeof buildCustomOpportunityEmphasis>): T {
+  if (!emphasis.enabled || emphasis.supportedStackTerms.length === 0) return tailored;
+
+  const topTerms = emphasis.supportedStackTerms.slice(0, 9);
+  const summarySentence =
+    `Built an Agentic job search assistant using ${topTerms.slice(0, 6).join(", ")} to connect AI-assisted workflows, evidence retrieval, automation, and application-state operations.`;
+  const markdownResume = emphasizeResumeText(tailored.markdownResume, summarySentence, topTerms);
+  const plainTextResume = emphasizeResumeText(tailored.plainTextResume, summarySentence, topTerms);
+  const keywordAlignment = withEmphasisKeywordAlignment(tailored.keywordAlignment, {
+    matchedTerms: topTerms,
+    missingTerms: emphasis.unsupportedRequestedSystems,
+    notes: [
+      `Custom opportunity emphasis applied for ${job.title}.`,
+      "Unsupported requested systems were not added as claimed skills.",
+    ],
+  });
+
+  return {
+    ...tailored,
+    markdownResume,
+    plainTextResume,
+    keywordAlignment,
+  };
+}
+
+function emphasizeResumeText(resume: string, summarySentence: string, stackTerms: string[]) {
+  const withSummary = replaceSection(resume, "Summary", (content) => {
+    if (content.toLowerCase().includes("model context protocol") || content.toLowerCase().includes("mcp")) return content;
+    return [summarySentence, content].filter(Boolean).join(" ");
+  });
+  return replaceSection(withSummary, "Skills", (content) => mergeSkillLine(content, stackTerms));
+}
+
+function replaceSection(text: string, sectionName: string, update: (content: string) => string) {
+  const lines = text.split("\n");
+  const start = lines.findIndex((line) => normalizeHeading(line) === sectionName.toLowerCase());
+  if (start === -1) return text;
+  const end = lines.findIndex((line, index) => index > start && Boolean(normalizeHeading(line)));
+  const contentEnd = end === -1 ? lines.length : end;
+  return [
+    ...lines.slice(0, start + 1),
+    update(lines.slice(start + 1, contentEnd).join("\n").trim()),
+    "",
+    ...lines.slice(contentEnd),
+  ].join("\n").replace(/\n{3,}/g, "\n\n");
+}
+
+function normalizeHeading(line: string) {
+  const trimmed = line.trim().replace(/^#{1,6}\s*/, "");
+  if (/^(summary|skills|professional experience|projects|education|certifications)$/i.test(trimmed)) {
+    return trimmed.toLowerCase();
+  }
+  return "";
+}
+
+function mergeSkillLine(content: string, stackTerms: string[]) {
+  const skills = Array.from(new Set([
+    ...content.split(/,|\n/).map((item) => item.trim()).filter(Boolean),
+    ...stackTerms,
+  ]));
+  return skills.join(", ");
+}
+
+function withEmphasisKeywordAlignment(existing: unknown, updates: { matchedTerms: string[]; missingTerms: string[]; notes: string[] }) {
+  const base = existing && typeof existing === "object" && !Array.isArray(existing)
+    ? existing as Record<string, unknown>
+    : {};
+  return {
+    ...base,
+    matchedTerms: uniqueStrings([...stringArray(base.matchedTerms), ...updates.matchedTerms]),
+    missingTerms: uniqueStrings([...stringArray(base.missingTerms), ...updates.missingTerms]),
+    notes: uniqueStrings([...stringArray(base.notes), ...updates.notes]),
+  };
+}
+
+function hasSourceSupport(sourceText: string, term: string) {
+  const normalizedSource = normalizeSupportText(sourceText);
+  const normalizedTerm = normalizeSupportText(term);
+  if (normalizedSource.includes(normalizedTerm)) return true;
+  const aliases: Record<string, string[]> = {
+    "model context protocol mcp": ["mcp", "model context protocol"],
+    "langsmith style observability": ["langsmith", "observability"],
+    "email outcome tracking": ["email", "outcome tracking"],
+    "application state reconciliation": ["application state", "reconciliation"],
+    "postgres": ["postgresql", "postgres"],
+    "pgvector": ["pgvector", "vector"],
+  };
+  return (aliases[normalizedTerm] ?? []).some((alias) => normalizedSource.includes(normalizeSupportText(alias)));
+}
+
+function normalizeSupportText(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function uniqueStrings(values: string[]) {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
 
 function stringArray(value: unknown): string[] {
