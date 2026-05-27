@@ -80,6 +80,8 @@ Duplicates and stale roles are down-ranked or grouped so the user does not waste
 
 Active job queues also use strict suppression. Jobs that are already applied, rejected, archived, or represented by a ready-to-apply application are blocked from active search results, recruiting-agency promotion, bulk packet preparation, manual capture scoring, and Apply Sprint. The suppression gate matches canonical company/title/location keys, normalized ATS wrapper names, `Title @ Company` captures, duplicate-group siblings, and application URL variants across Greenhouse, Lever, Ashby, and company-site sources. Historical records remain available in rejected, archived, and all views for audit or manual recovery.
 
+The Jobs page **Check duplicates** action is also a cleanup action. It first refreshes duplicate groups and stale scores, then scans submitted/application history, rejected matches, archived matches, ready-to-apply matches, existing suppressions, duplicate groups, and canonical keys. Active duplicate matches are repaired by mirroring the strongest source state: submitted history takes precedence, then rejected, then archived, then ready-to-apply sibling cleanup. Ready-to-apply canonical records are preserved; only duplicate active siblings are archived.
+
 ## Scoring
 
 The scoring model separates three ideas:

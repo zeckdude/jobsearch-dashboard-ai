@@ -11,7 +11,6 @@ export function DetectJobQualityControl() {
       variant="outlined"
       startIcon={<FindReplaceOutlinedIcon />}
       loadingLabel="Checking..."
-      message="Duplicate and stale job check finished."
     >
       Check duplicates
     </ActionButton>
