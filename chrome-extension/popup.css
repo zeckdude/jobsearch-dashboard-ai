@@ -99,6 +99,10 @@ button.secondary {
   color: #161616;
 }
 
+button.apply-now {
+  background: #0f6b4f;
+}
+
 .open-job {
   display: inline-flex;
   width: fit-content;

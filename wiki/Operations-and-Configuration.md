@@ -80,6 +80,10 @@ Without `BRAVE_SEARCH_API_KEY`, the search-query adapter returns no jobs and `/s
 
 The search-query source carries roadmap coverage for the former planned sources. It uses targeted source/site queries rather than dedicated scrapers for high-friction ATS, remote-board, startup-board, VC-portfolio, Hacker News, USAJOBS, and tech-board sources.
 
+## Chrome Extension
+
+The Chrome extension uses `POST /api/jobs/capture` for saving job pages and `POST /api/jobs/:id/apply-now` for the saved-job Apply Now flow. Both endpoints honor `BROWSER_EXTENSION_TOKEN` when configured. Apply Now uses the active Chrome tab URL as the final application URL before preparing materials and launching the local assistant.
+
 ## Market Intelligence Research
 
 The market intelligence brief runs from the Profiles page or `POST /api/market-intelligence/run`. It fetches trusted source pages, discovers relevant articles, extracts readable content, and stores only metadata, claims, summaries, short excerpts, and synthesis in `AgentRun.outputJson`.

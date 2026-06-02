@@ -61,7 +61,10 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       ...result,
+      jobId: result.job.id,
       jobUrl: `/jobs/${result.job.id}`,
+      company: result.job.company,
+      title: result.job.title,
       matches,
       matchCount: matches.length,
       initialMatchCount: result.matches.length,

@@ -69,6 +69,7 @@ describe("/api/jobs/capture", () => {
     });
     await expect(response.json()).resolves.toMatchObject({
       job: { id: "job_1" },
+      jobId: "job_1",
       jobUrl: "/jobs/job_1",
       initialMatchCount: 0,
       matchCount: 1,

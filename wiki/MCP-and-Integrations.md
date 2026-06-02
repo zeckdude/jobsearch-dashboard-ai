@@ -48,9 +48,7 @@ The MCP server can prepare packages and update local tracking state. It does not
 
 ## Chrome Extension
 
-The Chrome extension captures jobs found outside the app and sends them into Job Search OS for review.
-
-It is designed to add applications to the system for agent and user review, not to fill forms.
+The Chrome extension captures jobs found outside the app and sends them into Job Search OS for review. After a save, it can also launch **Apply Now** for the last saved job from the current active tab URL, which lets the user save a job-description page and then navigate to the real application form before preparing materials and starting the local assistant.
 
 Package:
 
@@ -69,6 +67,8 @@ The extension can capture:
 Captured jobs flow through normalization, dedupe, and scoring.
 
 If a Chrome-captured job has zero matching profiles, the app treats the save as a search-strategy signal, creates an enabled captured-intent profile, and scores the captured job against that profile immediately. The default profile is `AI-Native Enterprise Product Frontend`, which targets AI-native frontend/product engineering, agentic workflows, analytics-heavy enterprise UI, design systems, and workflow automation work similar to Job Search OS.
+
+Apply Now sends the current tab URL to the local app, updates the saved job's application URL, prepares or reuses the generated resume and cover letter, creates the `ready_to_apply` application, and launches the local assistant. The extension also keeps `Fill from Job Search OS` for already-ready application pages where the current URL can be matched directly.
 
 ## GitHub Context
 

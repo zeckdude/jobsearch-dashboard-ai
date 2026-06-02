@@ -68,6 +68,8 @@ Jobs can be added manually through the app or through the Chrome extension. Capt
 
 Chrome capture also learns from selection intent. When a captured job produces zero matching profiles, the system creates an enabled captured-intent profile and scores the captured job against it immediately. The first generated lane is `AI-Native Enterprise Product Frontend`, combining the preferred career direction of AI-native product/frontend work with broader senior frontend/product engineering defaults for urgent search coverage.
 
+After a Chrome save, the extension stores the last saved job id locally and exposes **Apply Now**. The user can navigate to a different ATS/application page, reopen the extension, and launch from the current tab URL. The app updates the saved job application URL before preparing materials, so job-description pages and final application forms can be different URLs.
+
 ## Market Intelligence
 
 The Profiles page includes a weekly market intelligence brief. The `MARKET_INTELLIGENCE` agent compares recent matched jobs, profile health, application outcomes, skill mentions, and company patterns against curated external labor-market sources.

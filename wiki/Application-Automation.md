@@ -15,6 +15,8 @@ It can:
 - surface blocker state
 - show logs and automation status
 
+The Chrome extension can start the same flow with **Apply Now** after saving a job. It remembers the last saved job, uses the active tab URL as the final application URL, prepares or reuses the custom resume and cover letter, creates the `ready_to_apply` application, and launches the local assistant.
+
 ## Application Packets
 
 An application packet is generated per approved job and may include:
@@ -138,7 +140,7 @@ Ashby may flag Playwright-controlled submissions as possible spam. Job Search OS
 
 When the assistant sees Ashby copy such as `We couldn't submit your application`, `possible spam`, or reCAPTCHA anti-spam guidance, it records `ats_spam_block`, keeps the application out of applied state, creates a Needs Me item, and recommends retrying in the user's normal Chrome profile.
 
-The Chrome extension supports `Fill from Job Search OS` on a ready application URL. It loads the local assistant package, fills safe known fields and obvious cover-letter/application-answer fields, highlights upload fields that require manual file selection, and never clicks submit. If Ashby still blocks normal Chrome submission, the recommended fallback is company direct or recruiter outreach, not stealth automation.
+The Chrome extension supports `Apply Now` after saving a job and `Fill from Job Search OS` on a ready application URL. Apply Now prepares materials and launches the local assistant from the user's current tab URL; Fill from Job Search OS loads the local assistant package, fills safe known fields and obvious cover-letter/application-answer fields, highlights upload fields that require manual file selection, and never clicks submit. If Ashby still blocks normal Chrome submission, the recommended fallback is company direct or recruiter outreach, not stealth automation.
 
 ## Auto-Submit Policy
 
