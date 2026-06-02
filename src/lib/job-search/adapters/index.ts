@@ -5,6 +5,7 @@ import { companySiteAdapter } from "./company-site";
 import { greenhouseAdapter } from "./greenhouse";
 import { leverAdapter } from "./lever";
 import { remoteOkAdapter } from "./remoteok";
+import { searchQueryAdapter } from "./search-query";
 import { weWorkRemotelyAdapter } from "./weworkremotely";
 
 const adapters: Partial<Record<JobSourceType, JobSourceAdapter>> = {
@@ -14,6 +15,7 @@ const adapters: Partial<Record<JobSourceType, JobSourceAdapter>> = {
   lever: leverAdapter,
   weworkremotely: weWorkRemotelyAdapter,
   company_site: companySiteAdapter,
+  search_query: searchQueryAdapter,
 };
 
 export function getAdapterForSource(type: JobSourceType) {

@@ -21,6 +21,8 @@ Profiles can be active, paused, or archived.
 
 The company source list is a target source list, not a claim that each company is currently hiring.
 
+Companies can be added from `/sources` with a simple form: company name, priority, categories, and optional Greenhouse, Lever, or Ashby slugs. If slugs are omitted, the app generates common compact and dashed ATS slug variants. Search terms and the careers query are generated from the selected categories.
+
 The app prioritizes companies and roles around:
 
 - React
@@ -47,10 +49,15 @@ The app supports job ingestion from:
 - Greenhouse
 - Lever
 - Ashby
+- Brave Search-backed search queries
 - manual capture
 - selected job boards where appropriate
 
 The source configuration can store company slugs and adapter settings.
+
+The `/sources` roadmap labels are operational metadata, not all runtime toggles. `Implemented` entries have working adapters or manual workflows, `enabled` database sources are included in search runs, `planned` entries are future connector candidates, `manual` entries require human/account handling, and `P1` indicates priority-one coverage regardless of implementation status.
+
+The Search Query Backlog stores targeted open-web searches such as ATS-specific React/TypeScript remote queries. It runs through Brave Search only when `BRAVE_SEARCH_API_KEY` is configured and the `Search Query Backlog` source is enabled; otherwise it remains visible as provider-missing.
 
 ## Manual Job Capture
 

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { apiError } from "@/lib/api";
-import { configToPrismaJson, defaultCompanySourceConfig, normalizeCompanySourceConfig } from "@/lib/job-search/company-source-config";
+import { addCompanySourceToConfig, configToPrismaJson, defaultCompanySourceConfig, normalizeCompanySourceConfig } from "@/lib/job-search/company-source-config";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -39,6 +39,34 @@ export async function PATCH(request: Request) {
   }
 }
 
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    const source = await getCompanySource();
+    const current = normalizeCompanySourceConfig(source.config);
+    const nextConfig = addCompanySourceToConfig(current, {
+      name: typeof body.name === "string" ? body.name : "",
+      priority: typeof body.priority === "number" ? body.priority : Number(body.priority),
+      categories: parseList(body.categories),
+      greenhouseSlugs: parseList(body.greenhouseSlugs),
+      leverSlugs: parseList(body.leverSlugs),
+      ashbySlugs: parseList(body.ashbySlugs),
+    });
+    const updated = await prisma.jobSource.update({
+      where: { id: source.id },
+      data: { config: configToPrismaJson(nextConfig) },
+    });
+
+    return NextResponse.json({
+      enabled: updated.enabled,
+      config: normalizeCompanySourceConfig(updated.config),
+      message: `${body.name} added to the company source list.`,
+    });
+  } catch (error) {
+    return apiError(error, 400);
+  }
+}
+
 async function getCompanySource() {
   return prisma.jobSource.upsert({
     where: { type_name: { type: "company_site", name: "Company Source List" } },
@@ -50,4 +78,13 @@ async function getCompanySource() {
       config: configToPrismaJson(defaultCompanySourceConfig()),
     },
   });
+}
+
+function parseList(value: unknown) {
+  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string");
+  if (typeof value !== "string") return [];
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }

@@ -1,5 +1,5 @@
 import type { Prisma } from "@prisma/client";
-import { companySourceDownrankTerms, companySources, companySourceSearchTags, type CompanySource } from "@/lib/job-search/company-sources";
+import { companySourceDownrankTerms, companySources, companySourceSearchTags, createCompanySource, type CompanySource } from "@/lib/job-search/company-sources";
 
 export type CompanySourceConfig = {
   qualityTier: string;
@@ -48,6 +48,40 @@ export function configToPrismaJson(config: CompanySourceConfig): Prisma.InputJso
   return config as unknown as Prisma.InputJsonValue;
 }
 
+export type CompanySourceInput = {
+  name: string;
+  priority?: number;
+  categories?: string[];
+  greenhouseSlugs?: string[];
+  leverSlugs?: string[];
+  ashbySlugs?: string[];
+};
+
+export function addCompanySourceToConfig(config: CompanySourceConfig, input: CompanySourceInput): CompanySourceConfig {
+  const name = input.name.trim();
+  if (!name) throw new Error("Company name is required.");
+  if (config.companies.some((company) => company.name.toLowerCase() === name.toLowerCase())) {
+    throw new Error(`${name} is already in the company source list.`);
+  }
+  const categories = normalizeStringList(input.categories).length ? normalizeStringList(input.categories) : ["custom"];
+  const priority = normalizePriority(input.priority);
+  const atsSlugs = {
+    greenhouse: normalizeStringList(input.greenhouseSlugs),
+    lever: normalizeStringList(input.leverSlugs),
+    ashby: normalizeStringList(input.ashbySlugs),
+  };
+  const company = createCompanySource({
+    name,
+    priority,
+    categories,
+    atsSlugs: Object.fromEntries(Object.entries(atsSlugs).filter(([, slugs]) => slugs.length > 0)) as CompanySource["atsSlugs"],
+  });
+  return {
+    ...config,
+    companies: [...config.companies, company].sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name)),
+  };
+}
+
 function isCompanySource(value: unknown): value is CompanySource {
   const source = objectValue(value);
   return typeof source.name === "string"
@@ -74,4 +108,17 @@ function stringArray(value: unknown, fallback: string[]) {
 function clampInt(value: unknown, min: number, max: number, fallback: number) {
   if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
   return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+function normalizePriority(value: unknown): 1 | 2 | 3 {
+  if (value === 1 || value === 2 || value === 3) return value;
+  return 2;
+}
+
+function normalizeStringList(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }

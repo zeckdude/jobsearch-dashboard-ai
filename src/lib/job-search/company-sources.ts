@@ -816,6 +816,23 @@ function buildCompanySources() {
   return companies;
 }
 
+export function createCompanySource(input: {
+  name: string;
+  categories: string[];
+  priority: 1 | 2 | 3;
+  atsSlugs?: CompanySource["atsSlugs"];
+}): CompanySource {
+  const categories = uniq(input.categories.length ? input.categories : ["custom"]);
+  return {
+    name: input.name,
+    categories,
+    priority: input.priority,
+    searchTerms: termsFor(categories),
+    careersQuery: `${input.name} careers senior frontend engineer React TypeScript`,
+    atsSlugs: input.atsSlugs && Object.keys(input.atsSlugs).length ? input.atsSlugs : generatedAtsSlugs(input.name),
+  };
+}
+
 function termsFor(categories: string[]) {
   return uniq([
     ...defaultSearchTerms,

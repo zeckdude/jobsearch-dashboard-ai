@@ -81,6 +81,8 @@ POSTMARK_SERVER_TOKEN=...
 NOTIFICATION_FROM_EMAIL="Job Search OS <jobs@example.com>"
 PUSHOVER_USER_KEY=...
 PUSHOVER_APP_TOKEN=...
+BRAVE_SEARCH_API_KEY=...
+SEARCH_QUERY_MAX_RESULTS=80
 ```
 
 With `OPENAI_API_KEY`, resume parsing, job scoring, and resume tailoring use OpenAI structured outputs. Without it, those flows still run through deterministic parsers/scorers so the dashboard remains usable.
@@ -160,7 +162,9 @@ The manual search run uses enabled external source adapters. Direct ATS sources 
 { "companySlugs": ["linear", "vercel"] }
 ```
 
-The seeded `Company Source List` is a curated target list, not a claim that every company is hiring today. Search runs probe likely company careers/ATS feeds from that list, filter for role families such as React, TypeScript, Next.js, design systems, security/identity, AI tooling, developer platforms, defense tech, geospatial, and enterprise dashboards, then score the resulting roles against enabled profiles.
+The seeded `Company Source List` is a curated target list, not a claim that every company is hiring today. `/sources` can add companies with a name, priority, categories, and optional Greenhouse/Lever/Ashby slugs; the app generates default search terms and common ATS slug variants when slugs are omitted. Search runs probe likely company careers/ATS feeds from that list, filter for role families such as React, TypeScript, Next.js, design systems, security/identity, AI tooling, developer platforms, defense tech, geospatial, and enterprise dashboards, then score the resulting roles against enabled profiles.
+
+The Source roadmap on `/sources` distinguishes implemented connectors from enabled runtime sources. `Implemented` means an adapter or manual workflow exists, `enabled` means the source is included in search runs, `planned` means future connector work, `manual` means human/account workflow, and `P1` is priority-one regardless of status. The Search Query Backlog is an implemented Brave Search connector when `BRAVE_SEARCH_API_KEY` is configured and the `Search Query Backlog` source is enabled. Without the key, it remains visible but provider-missing and returns no jobs.
 
 Search and active queues use strict duplicate suppression. Applied, rejected, archived, and ready-to-apply roles suppress canonical siblings across source URLs, ATS wrappers, duplicate groups, and equivalent company/title/location variants so the same role is not promoted again through Jobs, the recruiting agency, bulk packet preparation, manual capture scoring, or Apply Sprint. The Jobs page **Check duplicates** action now runs duplicate/stale detection and then repairs resurfaced suppressed jobs by syncing active duplicate matches to the source state: submitted/application history wins, rejected duplicates become rejected, archived duplicates become archived, and ready-to-apply sibling duplicates are archived while the canonical ready item remains available.
 

@@ -61,6 +61,21 @@ Status endpoint:
 /api/jobs/search/run/status
 ```
 
+## Source Management
+
+Manage direct company sources from `/sources`. The add-company form writes to the `Company Source List` config and accepts a company name, priority, categories, and optional Greenhouse, Lever, and Ashby slugs. When slugs are blank, generated ATS slug variants are used.
+
+The source roadmap separates implemented connector coverage from enabled runtime sources. Planned sources are not run automatically, and manual sources require human/account workflow until an explicit connector exists.
+
+Optional Brave Search configuration enables the Search Query Backlog source:
+
+```bash
+BRAVE_SEARCH_API_KEY=...
+SEARCH_QUERY_MAX_RESULTS=80
+```
+
+Without `BRAVE_SEARCH_API_KEY`, the search-query adapter returns no jobs and `/sources` reports provider-missing status.
+
 ## Market Intelligence Research
 
 The market intelligence brief runs from the Profiles page or `POST /api/market-intelligence/run`. It fetches trusted source pages, discovers relevant articles, extracts readable content, and stores only metadata, claims, summaries, short excerpts, and synthesis in `AgentRun.outputJson`.

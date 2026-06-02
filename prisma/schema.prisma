@@ -48,6 +48,7 @@ enum JobSourceType {
   remoteok
   weworkremotely
   company_site
+  search_query
   manual
 }
 

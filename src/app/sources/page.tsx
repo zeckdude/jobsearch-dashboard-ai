@@ -20,21 +20,42 @@ import { StatusChip } from "@/components/ui/status-chip";
 import { configToPrismaJson, defaultCompanySourceConfig, normalizeCompanySourceConfig } from "@/lib/job-search/company-source-config";
 import { searchQueryTemplates, sourceCatalog } from "@/lib/job-search/source-catalog";
 import { prisma } from "@/lib/prisma";
+import { AddCompanySourceForm } from "./add-company-source-form";
 import { CompanySourceSettings } from "./company-source-settings";
 
 export const dynamic = "force-dynamic";
 
 export default async function SourcesPage({ searchParams }: { searchParams?: { q?: string; category?: string; priority?: string } }) {
-  const source = await prisma.jobSource.upsert({
-    where: { type_name: { type: "company_site", name: "Company Source List" } },
-    update: {},
-    create: {
-      name: "Company Source List",
-      type: "company_site",
-      enabled: true,
-      config: configToPrismaJson(defaultCompanySourceConfig()),
-    },
-  });
+  const [source, searchQuerySource, jobSources] = await prisma.$transaction([
+    prisma.jobSource.upsert({
+      where: { type_name: { type: "company_site", name: "Company Source List" } },
+      update: {},
+      create: {
+        name: "Company Source List",
+        type: "company_site",
+        enabled: true,
+        config: configToPrismaJson(defaultCompanySourceConfig()),
+      },
+    }),
+    prisma.jobSource.upsert({
+      where: { type_name: { type: "search_query", name: "Search Query Backlog" } },
+      update: {},
+      create: {
+        name: "Search Query Backlog",
+        type: "search_query",
+        baseUrl: "https://search.brave.com",
+        enabled: Boolean(process.env.BRAVE_SEARCH_API_KEY),
+        config: {
+          qualityTier: "search_query",
+          provider: "brave",
+          queries: searchQueryTemplates,
+          maxResultsPerQuery: 8,
+          maxFetch: Number(process.env.SEARCH_QUERY_MAX_RESULTS ?? 80),
+        },
+      },
+    }),
+    prisma.jobSource.findMany(),
+  ]);
   const config = normalizeCompanySourceConfig(source.config);
   const query = searchParams?.q?.trim().toLowerCase() ?? "";
   const category = searchParams?.category?.trim() ?? "";
@@ -52,11 +73,13 @@ export default async function SourcesPage({ searchParams }: { searchParams?: { q
     count: config.companies.filter((company) => company.priority === item).length,
   }));
   const sourceCatalogCounts = {
-    active: sourceCatalog.filter((item) => item.status === "active").length,
+    implemented: sourceCatalog.filter((item) => item.status === "active").length,
+    enabled: jobSources.filter((item) => item.enabled && item.type !== "manual").length,
     planned: sourceCatalog.filter((item) => item.status === "planned").length,
     manual: sourceCatalog.filter((item) => item.status === "manual").length,
     priorityOne: sourceCatalog.filter((item) => item.priority === 1).length,
   };
+  const hasBraveSearchKey = Boolean(process.env.BRAVE_SEARCH_API_KEY);
   const visibleCatalog = sourceCatalog
     .slice()
     .sort((left, right) => left.priority - right.priority || statusRank(left.status) - statusRank(right.status) || left.name.localeCompare(right.name));
@@ -111,11 +134,12 @@ export default async function SourcesPage({ searchParams }: { searchParams?: { q
                 <Box>
                   <Typography variant="h3">Source roadmap</Typography>
                   <Typography variant="body2" color="text.secondary">
-                    Prioritized source registry for board, ATS, marketplace, community, newsletter, and search-query connectors.
+                    Prioritized source registry for board, ATS, marketplace, community, newsletter, and search-query connectors. Implemented sources have working adapters; enabled sources are included in search runs.
                   </Typography>
                 </Box>
                 <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
-                  <Chip variant="outlined" label={`${sourceCatalogCounts.active} active`} />
+                  <Chip variant="outlined" label={`${sourceCatalogCounts.implemented} implemented`} />
+                  <Chip color="success" variant="outlined" label={`${sourceCatalogCounts.enabled} enabled`} />
                   <Chip variant="outlined" label={`${sourceCatalogCounts.planned} planned`} />
                   <Chip variant="outlined" label={`${sourceCatalogCounts.manual} manual`} />
                   <Chip color="primary" variant="outlined" label={`${sourceCatalogCounts.priorityOne} P1`} />
@@ -157,9 +181,14 @@ export default async function SourcesPage({ searchParams }: { searchParams?: { q
               <Box>
                 <Typography variant="h3">Search-query backlog</Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Targeted open-web queries to convert into a search-query connector after the direct ATS pipeline is stable.
+                  Targeted open-web queries now run through the Brave Search connector when the `Search Query Backlog` source is enabled and `BRAVE_SEARCH_API_KEY` is configured.
                 </Typography>
               </Box>
+              <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+                <StatusChip status={searchQuerySource.enabled && hasBraveSearchKey ? "configured" : "provider_missing"} />
+                <Chip variant="outlined" label={hasBraveSearchKey ? "Brave key configured" : "Brave key missing"} />
+                <Chip variant="outlined" label={searchQuerySource.enabled ? "Source enabled" : "Source disabled"} />
+              </Stack>
               <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "1fr 1fr" }, gap: 1 }}>
                 {searchQueryTemplates.map((query) => (
                   <Box key={query} sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1, bgcolor: "background.paper" }}>
@@ -204,13 +233,25 @@ export default async function SourcesPage({ searchParams }: { searchParams?: { q
                 </Stack>
               </Stack>
 
+              <Box sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 2, bgcolor: "background.paper" }}>
+                <Stack spacing={1.5}>
+                  <Box>
+                    <Typography variant="h3">Add company</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Add a direct company source for Greenhouse, Lever, Ashby, or generated ATS slug probing.
+                    </Typography>
+                  </Box>
+                  <AddCompanySourceForm categories={categories} />
+                </Stack>
+              </Box>
+
               <Box component="form" sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "2fr 1fr 1fr" }, gap: 1.5 }}>
-                <input name="q" defaultValue={searchParams?.q ?? ""} placeholder="Search companies, categories, or terms" style={inputStyle} />
-                <select name="category" defaultValue={category} style={inputStyle}>
+                <input aria-label="Search companies, categories, or terms" name="q" defaultValue={searchParams?.q ?? ""} placeholder="Search companies, categories, or terms" style={inputStyle} />
+                <select aria-label="Filter company sources by category" name="category" defaultValue={category} style={inputStyle}>
                   <option value="">All categories</option>
                   {categories.map((item) => <option key={item} value={item}>{item}</option>)}
                 </select>
-                <select name="priority" defaultValue={priority ? String(priority) : ""} style={inputStyle}>
+                <select aria-label="Filter company sources by priority" name="priority" defaultValue={priority ? String(priority) : ""} style={inputStyle}>
                   <option value="">All priorities</option>
                   <option value="1">Priority 1</option>
                   <option value="2">Priority 2</option>
