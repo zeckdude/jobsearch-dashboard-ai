@@ -78,6 +78,8 @@ SEARCH_QUERY_MAX_RESULTS=80
 
 Without `BRAVE_SEARCH_API_KEY`, the search-query adapter returns no jobs and `/sources` reports provider-missing status.
 
+The search-query source carries roadmap coverage for the former planned sources. It uses targeted source/site queries rather than dedicated scrapers for high-friction ATS, remote-board, startup-board, VC-portfolio, Hacker News, USAJOBS, and tech-board sources.
+
 ## Market Intelligence Research
 
 The market intelligence brief runs from the Profiles page or `POST /api/market-intelligence/run`. It fetches trusted source pages, discovers relevant articles, extracts readable content, and stores only metadata, claims, summaries, short excerpts, and synthesis in `AgentRun.outputJson`.

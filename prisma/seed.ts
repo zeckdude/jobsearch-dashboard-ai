@@ -2,6 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import { upsertApplicationAnswerMemory } from "../src/lib/application-answer-memory";
 import { syncJobSearchOsProjectEvidence } from "../src/lib/evidence/ingest";
 import { configToPrismaJson, defaultCompanySourceConfig } from "../src/lib/job-search/company-source-config";
+import { searchQueryTemplates } from "../src/lib/job-search/source-catalog";
 import { prisma as appPrisma } from "../src/lib/prisma";
 import { defaultResumeProfiles, resumeProfileJson } from "../src/lib/resume-profiles/defaults";
 
@@ -259,18 +260,7 @@ async function main() {
       config: {
         qualityTier: "search_query",
         provider: "brave",
-        queries: [
-          'site:jobs.ashbyhq.com "Senior Frontend Engineer" "remote"',
-          'site:boards.greenhouse.io "Staff Frontend Engineer" "React" "TypeScript"',
-          'site:jobs.lever.co "Product Engineer" "AI" "remote"',
-          'site:workdayjobs.com "React" "remote" "Senior"',
-          'site:smartrecruiters.com "Frontend Engineer" "United States"',
-          '"Senior Frontend Engineer" "React" "TypeScript" "remote" "salary"',
-          '"Staff Software Engineer" "design systems" "remote"',
-          '"Developer Experience Engineer" "React" "TypeScript"',
-          '"WebAuthn" "Frontend Engineer" "remote"',
-          '"Mission Software Engineer" "React" "TypeScript"',
-        ],
+        queries: searchQueryTemplates,
         maxResultsPerQuery: 8,
         maxFetch: Number(process.env.SEARCH_QUERY_MAX_RESULTS ?? 80),
       },
