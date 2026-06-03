@@ -1,6 +1,13 @@
 import type { CandidateEvidence, JobPosting, UserProfile } from "@prisma/client";
-import { describe, expect, it } from "vitest";
-import { buildThankYouDraft, reviewThankYouDraft, thankYouStageLabel } from "@/lib/applications/thank-you-drafts";
+import { describe, expect, it, vi } from "vitest";
+import { parseStructuredOutput } from "@/lib/ai/openai";
+import { buildThankYouDraft, generateThankYouDraft, reviewThankYouDraft, thankYouStageLabel } from "@/lib/applications/thank-you-drafts";
+
+vi.mock("@/lib/ai/openai", () => ({
+  parseStructuredOutput: vi.fn(),
+}));
+
+const parseStructuredOutputMock = vi.mocked(parseStructuredOutput);
 
 describe("thank-you drafts", () => {
   it("builds recruiter-screen email and LinkedIn drafts from interview context", () => {
@@ -42,6 +49,52 @@ describe("thank-you drafts", () => {
     expect(draft.linkedinBody.length).toBeLessThan(draft.emailBody.length);
     expect(draft.evidenceRefs).toEqual(["ev1"]);
     expect(reviewThankYouDraft(draft.emailBody, draft.linkedinBody, draft.evidenceRefs).status).toBe("PASS");
+  });
+
+  it("uses OpenAI structured output to polish rough notes when available", async () => {
+    parseStructuredOutputMock.mockResolvedValueOnce({
+      emailSubject: "Thank you - Amplitude recruiter screen",
+      emailBody: "Hi Lavanya,\n\nThank you for speaking with me about the Senior Software Engineer, Product Adoption role at Amplitude. I enjoyed learning more about the team and the product adoption work, and the conversation reinforced my interest in the opportunity.\n\nBest,\nCarl Welch",
+      linkedinBody: "Hi Lavanya, thank you for speaking with me about the Senior Software Engineer, Product Adoption role at Amplitude. I enjoyed learning more about the team and remain interested in continuing the conversation.",
+    });
+
+    const draft = await generateThankYouDraft({
+      job: {
+        company: "Amplitude",
+        title: "Senior Software Engineer, Product Adoption",
+        description: "Product adoption role.",
+      } as JobPosting,
+      profile: { fullName: "Carl Welch" } as UserProfile,
+      stage: "recruiter_screen",
+      interviewerName: "lavanya shahani",
+      notes: "Interview went well and I enjoyed speaking with lavanya shahani. I enjoy the kind of work that amplitude does the following:. Specialties.",
+      evidence: [],
+    });
+
+    expect(parseStructuredOutputMock).toHaveBeenCalled();
+    expect(draft.emailBody).toContain("Hi Lavanya,");
+    expect(draft.emailBody).not.toContain("the following");
+    expect(draft.linkedinBody).not.toContain("Specialties");
+  });
+
+  it("cleans name capitalization and noisy pasted-note artifacts in fallback drafts", () => {
+    parseStructuredOutputMock.mockReset();
+    const draft = buildThankYouDraft({
+      job: {
+        company: "Amplitude",
+        title: "Senior Software Engineer, Product Adoption",
+        description: "Product adoption role.",
+      } as JobPosting,
+      profile: { fullName: "Carl Welch" } as UserProfile,
+      stage: "recruiter_screen",
+      interviewerName: "lavanya shahani",
+      notes: "Interview went well and I enjoyed speaking with lavanya shahani. I enjoy the kind of work that amplitude does the following:. Specialties.",
+      evidence: [],
+    });
+
+    expect(draft.emailBody).toContain("Hi Lavanya,");
+    expect(draft.emailBody).not.toContain("the following");
+    expect(draft.linkedinBody).not.toContain("Specialties");
   });
 
   it("flags unsupported and over-styled drafts", () => {
