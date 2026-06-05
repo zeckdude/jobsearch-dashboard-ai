@@ -21,6 +21,7 @@ import TableCell from '@mui/material/TableCell';
 import TableContainer from '@mui/material/TableContainer';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
+import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import MenuBookOutlinedIcon from '@mui/icons-material/MenuBookOutlined';
 import CloseIcon from '@mui/icons-material/Close';
@@ -32,6 +33,7 @@ import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import CelebrationIcon from '@mui/icons-material/Celebration';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { PageHeader } from '@/components/ui/page-header';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -527,6 +529,72 @@ function TocDrawer({ entries, open, onClose }: { entries: TocEntry[]; open: bool
 
 // ─── Copy button ──────────────────────────────────────────────────────────────
 
+function ClickToCopyCode({ text, children }: { text: string; children: React.ReactNode }) {
+  const [state, setState] = useState<'idle' | 'copied' | 'fading'>('idle');
+
+  function handleClick() {
+    navigator.clipboard.writeText(text).then(() => {
+      setState('copied');
+      setTimeout(() => setState('fading'), 1200);
+      setTimeout(() => setState('idle'), 1800);
+    });
+  }
+
+  const tooltipTitle =
+    state === 'idle' ? 'Click to copy' : state === 'copied' ? 'Copied!' : '';
+
+  return (
+    <Tooltip
+      title={tooltipTitle}
+      placement="top"
+      arrow
+      disableHoverListener={false}
+      slotProps={{
+        tooltip: {
+          sx: {
+            fontSize: 11.5,
+            fontWeight: 600,
+            px: 1,
+            py: 0.5,
+            bgcolor: state === 'copied' ? '#059669' : 'grey.800',
+            color: 'white',
+            transition: 'opacity 0.4s',
+            opacity: state === 'fading' ? 0 : 1,
+            '& .MuiTooltip-arrow': {
+              color: state === 'copied' ? '#059669' : '#424242',
+            },
+          },
+        },
+      }}
+    >
+      <Box
+        component="code"
+        onClick={handleClick}
+        sx={{
+          bgcolor: state === 'copied' ? 'rgba(5, 150, 105, 0.1)' : 'rgba(15, 118, 110, 0.08)',
+          color: state === 'copied' ? '#059669' : 'primary.dark',
+          borderRadius: 0.75,
+          px: 0.75,
+          py: 0.2,
+          fontSize: '0.855em',
+          fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
+          border: `1px solid ${state === 'copied' ? 'rgba(5,150,105,0.35)' : 'rgba(15, 118, 110, 0.18)'}`,
+          whiteSpace: 'nowrap',
+          cursor: 'pointer',
+          transition: 'all 0.25s',
+          userSelect: 'none',
+          '&:hover': {
+            bgcolor: 'rgba(15, 118, 110, 0.14)',
+            borderColor: 'rgba(15, 118, 110, 0.35)',
+          },
+        }}
+      >
+        {children}
+      </Box>
+    </Tooltip>
+  );
+}
+
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -749,22 +817,41 @@ function buildComponents(onPartComplete: (n: number) => void) {
           </Box>
         );
       }
+      const inlineText = childrenToText(children);
+      // Detect internal app routes: starts with /, only lowercase letters/digits/hyphens/slashes, no dots
+      const isAppRoute = /^\/[a-z][a-z0-9\-/]*$/.test(inlineText);
+      const codeEl = <ClickToCopyCode text={inlineText}>{children}</ClickToCopyCode>;
+      if (!isAppRoute) return codeEl;
       return (
-        <Box
-          component="code"
-          sx={{
-            bgcolor: 'rgba(15, 118, 110, 0.08)',
-            color: 'primary.dark',
-            borderRadius: 0.75,
-            px: 0.75,
-            py: 0.2,
-            fontSize: '0.855em',
-            fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
-            border: '1px solid rgba(15, 118, 110, 0.18)',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {children}
+        <Box component="span" sx={{ display: 'inline', whiteSpace: 'nowrap' }}>
+          {codeEl}
+          {' '}
+          <Box
+            component="a"
+            href={inlineText}
+            target="_blank"
+            rel="noreferrer"
+            sx={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              verticalAlign: 'middle',
+              gap: 0.3,
+              px: 0.75,
+              py: 0.2,
+              borderRadius: 1,
+              fontSize: 10.5,
+              fontWeight: 700,
+              bgcolor: 'primary.main',
+              color: 'white',
+              textDecoration: 'none',
+              letterSpacing: 0.2,
+              lineHeight: 1.4,
+              '&:hover': { bgcolor: 'primary.dark', textDecoration: 'none' },
+            }}
+          >
+            Open
+            <OpenInNewIcon sx={{ fontSize: 10 }} />
+          </Box>
         </Box>
       );
     },
