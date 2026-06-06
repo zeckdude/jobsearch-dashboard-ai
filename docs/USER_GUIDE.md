@@ -461,9 +461,9 @@ Without this token, GitHub API calls are unauthenticated and rate-limited to 60 
 | | |
 |---|---|
 | **Required?** | No |
-| **Where to get it** | [ai.google.dev](https://ai.google.dev) — requires a Gemini API key |
+| **Where to get it** | [ai.google.dev](https://ai.google.dev) — create a Gemini API key |
 | **Cost** | Free tier available; generous quota for a job search |
-| **Env variables** | `ADK_ENABLED=true`, `ADK_MODEL=gemini-2.5-flash`, and a Gemini API key |
+| **Env variables** | `ADK_ENABLED=true`, `ADK_MODEL=gemini-2.5-flash`, `GEMINI_API_KEY=<your-key>` |
 
 ADK (Google's Agent Development Kit) enables an additional AI "control plane" layer on top of OpenAI. When enabled, it powers:
 
@@ -545,7 +545,7 @@ The MCP server always runs as a local process on your machine. When your app is 
 | **Pushover** | Optional | Add keys to `.env` or Settings UI | Add to Vercel env vars or Settings UI | No phone push alerts |
 | **Resend or Postmark** | Optional | Add API key to `.env` | Add to Vercel env vars | No email digests |
 | **GitHub token** | Optional | Add `GITHUB_TOKEN` to `.env` | Add to Vercel env vars | Rate limits with 25+ repos |
-| **Google ADK / Gemini** | Optional | Add `ADK_ENABLED=true` + key to `.env` | Add to Vercel env vars | Daily plan and Jolene operator use simpler logic |
+| **Google ADK / Gemini** | Optional | Add `ADK_ENABLED=true`, `ADK_MODEL`, `GEMINI_API_KEY` to `.env` | Add to Vercel env vars | Daily plan and Jolene operator use simpler logic |
 | **LangSmith** | Optional | Add keys to `.env` | Add to Vercel env vars | No agent traces |
 | **Chrome extension token** | Optional | Add `BROWSER_EXTENSION_TOKEN` to `.env` | Add to Vercel env vars | Chrome extension won't connect |
 | **MCP server** | Optional | `npm run mcp:server` (always local) | Not on Vercel; point local server at production URL | External AI tools can't access your data |

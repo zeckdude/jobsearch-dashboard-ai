@@ -526,7 +526,7 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
                 <AutoAwesomeOutlinedIcon color="primary" />
                 <Typography variant="h3">Application automation</Typography>
               </Stack>
-              <StatusChip status={automation.autoSubmitEnabled ? "configured" : "provider_missing"} />
+              <StatusChip status={automation.autoSubmitEnabled ? "configured" : "manual_mode"} />
             </Stack>
             <Alert severity={automation.autoSubmitEnabled ? "warning" : "info"}>
               {automation.autoSubmitEnabled
