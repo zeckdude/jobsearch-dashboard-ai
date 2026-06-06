@@ -425,7 +425,7 @@ export function ServiceHealthPanel({
               </Stack>
               <Typography variant="h4">Potential silent failures</Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                Issues inferred from your current configuration and connection state. These services may appear configured but could be failing silently. Use the "Test connectivity" button to verify live status.
+                Issues inferred from your current configuration and connection state. These services may appear configured but could be failing silently. Use the &ldquo;Test connectivity&rdquo; button to verify live status.
               </Typography>
               <Stack spacing={1.25} sx={{ mt: 1.25 }}>
                 {silentFailures.map((failure, index) => (
