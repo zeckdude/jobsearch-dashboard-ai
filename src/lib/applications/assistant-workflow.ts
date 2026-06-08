@@ -754,8 +754,16 @@ function valueForKnownField(field: AssistantWorkflowField, application: KnownFie
   if (websiteOnlyField(label) && !hasGithubField) return profile?.githubUrl ?? profile?.portfolioUrl ?? "";
   if (/\b(portfolio|website|personal site)\b/.test(label)) return profile?.portfolioUrl ?? "";
   if (/\b(location|city|address)\b/.test(label)) return profile?.location ?? "";
+  if (isVeteranStatusField(label)) return profile?.veteranStatusAnswer ?? "";
+  if (/\b(race|ethnic)\b/i.test(label)) return profile?.raceAnswer ?? "";
+  if (/\b(gender|sex)\b/i.test(label)) return profile?.genderAnswer ?? "";
+  if (/\b(disab|ability status)\b/i.test(label)) return profile?.disabilityAnswer ?? "";
   if (/\bcover letter|why.*join|why.*team|why.*company|tell us why/i.test(label)) return application.coverLetter?.body ?? "";
   return "";
+}
+
+function isVeteranStatusField(label: string) {
+  return /\b(veteran|protected veteran|military service|armed forces)\b/i.test(label);
 }
 
 function websiteOnlyField(label: string) {

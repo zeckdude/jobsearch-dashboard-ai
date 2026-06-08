@@ -1,6 +1,6 @@
 import type { JobSearchProfile, JobSource } from "@prisma/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { searchQueryAdapter } from "@/lib/job-search/adapters/search-query";
+import { extractBuiltInHowToApplyUrl, searchQueryAdapter } from "@/lib/job-search/adapters/search-query";
 
 describe("searchQueryAdapter", () => {
   beforeEach(() => {
@@ -52,9 +52,48 @@ describe("searchQueryAdapter", () => {
       applicationUrl: "https://jobs.ashbyhq.com/example/123",
     });
     expect(normalized).toMatchObject({
+      applicationUrl: "https://jobs.ashbyhq.com/example/123/application",
       remoteType: "remote",
       atsProvider: "ashby",
     });
+  });
+
+  it("resolves Built In job detail pages to underlying Ashby application URLs", async () => {
+    const raw = {
+      sourceJobId: "search:builtin:job",
+      company: "Brisk Teaching",
+      title: "Frontend Engineer, Accessibility Contractor",
+      location: "Remote",
+      description: "Accessibility contract role",
+      applicationUrl: "https://builtin.com/job/frontend-engineer-accessibility-contractor/9425940",
+      rawData: { provider: "brave" },
+    };
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      text: async () => builtInDetailHtml,
+    } as Response);
+
+    const normalized = await searchQueryAdapter.normalize(raw);
+
+    expect(fetch).toHaveBeenCalledWith(raw.applicationUrl, expect.objectContaining({
+      headers: expect.objectContaining({ "User-Agent": "JobSearchOS/1.0" }),
+    }));
+    expect(normalized).toMatchObject({
+      applicationUrl: "https://jobs.ashbyhq.com/brisk-teaching/efaac331-a366-4bef-88ed-e3afb3127f5c/application",
+      atsProvider: "ashby",
+      rawData: {
+        resolvedApplicationUrl: {
+          source: "job_detail_page",
+          originalUrl: raw.applicationUrl,
+        },
+      },
+    });
+  });
+
+  it("extracts Built In how-to-apply URLs from job detail boot payloads", () => {
+    expect(extractBuiltInHowToApplyUrl(builtInDetailHtml, "https://builtin.com/job/frontend-engineer-accessibility-contractor/9425940")).toBe(
+      "https://jobs.ashbyhq.com/brisk-teaching/efaac331-a366-4bef-88ed-e3afb3127f5c",
+    );
   });
 
   it("expands Built In listing results into individual jobs", async () => {
@@ -210,6 +249,17 @@ const builtInListingHtml = `
           <a href="/job/staff-frontend-engineer/8991269" data-id="job-card-title">Staff Frontend Engineer</a>
         </div>
       </main>
+    </body>
+  </html>
+`;
+
+const builtInDetailHtml = `
+  <html>
+    <body>
+      <a href="https://jobs.ashbyhq.com/brisk-teaching/efaac331-a366-4bef-88ed-e3afb3127f5c" target="_blank">Apply</a>
+      <script>
+        Builtin.jobPostInit({"job":{"id":9425940,"howToApply":"https://jobs.ashbyhq.com/brisk-teaching/efaac331-a366-4bef-88ed-e3afb3127f5c","companyName":"Brisk Teaching","title":"Frontend Engineer, Accessibility Contractor"}});
+      </script>
     </body>
   </html>
 `;

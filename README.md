@@ -10,6 +10,18 @@ Install dependencies:
 npm install
 ```
 
+Start the local database, run migrations and seed data, then launch the app:
+
+```bash
+npm run dev:local
+```
+
+The app uses `DATABASE_URL` from `.env`. The checked-in example points at the Docker Postgres port `5433`; if your existing data is in another local Postgres, keep `.env` pointed there.
+
+Open `http://localhost:3000`.
+
+Or run each step manually:
+
 Start the Docker PostgreSQL database:
 
 ```bash
@@ -28,8 +40,6 @@ Start the app:
 ```bash
 npm run dev
 ```
-
-Open `http://localhost:3000`.
 
 Run the full local Docker stack instead:
 
@@ -304,7 +314,7 @@ Selected answers are added to `assistant-package.json` and written next to the g
 
 The assistant still leaves custom question fields untouched. Copy selected answers manually during the final browser review.
 
-Some job boards require Google OAuth, human verification, or paid apply flows. Those sources are disabled by default or treated as manual-only: the assistant opens the job in your normal browser and reveals the prepared materials folder instead of trying to automate the login.
+Some job boards require Google OAuth, human verification, or paid apply flows. Those sources are disabled by default, blocked from automated query ingestion, or treated as manual-only: the assistant opens the job in your normal browser and reveals the prepared materials folder instead of trying to automate the login. Remotive is currently blocked because its listings are paywall-gated.
 
 ## MCP Server
 

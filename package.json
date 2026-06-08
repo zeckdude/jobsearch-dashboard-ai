@@ -5,7 +5,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && next build",
+    "dev:local": "docker compose up -d --wait postgres && prisma migrate deploy && prisma db seed && next dev",
+    "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
