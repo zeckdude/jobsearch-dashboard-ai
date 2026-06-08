@@ -6,6 +6,7 @@ import RefreshOutlinedIcon from "@mui/icons-material/RefreshOutlined";
 import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import DeleteOutlineOutlinedIcon from "@mui/icons-material/DeleteOutlineOutlined";
 import ContentCopyOutlinedIcon from "@mui/icons-material/ContentCopyOutlined";
+import CheckCircleOutlineOutlinedIcon from "@mui/icons-material/CheckCircleOutlineOutlined";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -215,8 +216,7 @@ export function AssistantWorkbench({
       if (response.ok && payload.automationRun?.workflowStateJson) refresh();
   }
 
-  async function markApplied() {
-    const applicationId = launch?.application?.id ?? selectedId;
+  async function markApplied(applicationId = launch?.application?.id ?? selectedId) {
     if (!applicationId) return;
     setMarkingApplied(true);
     try {
@@ -458,6 +458,19 @@ export function AssistantWorkbench({
                   >
                     {selectedPrimaryAction.loadingLabel && (loading || markingApplied) ? selectedPrimaryAction.loadingLabel : selectedPrimaryAction.label}
                   </Button>
+                  {selectedPrimaryAction.kind !== "mark_applied" ? (
+                    <Button
+                      variant="outlined"
+                      color="primary"
+                      startIcon={<CheckCircleOutlineOutlinedIcon />}
+                      disabled={!selected || loading || markingApplied}
+                      onClick={() => {
+                        if (selected) void markApplied(selected.id);
+                      }}
+                    >
+                      {markingApplied ? "Updating..." : "I already applied"}
+                    </Button>
+                  ) : null}
                   <Typography variant="body2" color="text.secondary">{selectedPrimaryAction.detail}</Typography>
                 </Stack>
               ) : null}

@@ -16,6 +16,8 @@ Start the local database, run migrations and seed data, then launch the app:
 npm run dev:local
 ```
 
+The app uses `DATABASE_URL` from `.env`. The checked-in example points at the Docker Postgres port `5433`; if your existing data is in another local Postgres, keep `.env` pointed there.
+
 Open `http://localhost:3000`.
 
 Or run each step manually:

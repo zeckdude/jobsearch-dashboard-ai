@@ -98,6 +98,8 @@ export const sourceCatalog: SourceCatalogItem[] = [
 
 export const searchQueryTemplates = [
   'site:jobs.ashbyhq.com "Senior Frontend Engineer" "remote"',
+  'site:jobs.ashbyhq.com "Frontend Engineer" "Accessibility" "remote"',
+  'site:jobs.ashbyhq.com "Frontend Engineer" "Contractor" "remote"',
   'site:boards.greenhouse.io "Staff Frontend Engineer" "React" "TypeScript"',
   'site:jobs.lever.co "Product Engineer" "AI" "remote"',
   'site:workdayjobs.com "React" "remote" "Senior"',
@@ -117,6 +119,8 @@ export const searchQueryTemplates = [
   'site:wellfound.com/jobs "Frontend Engineer" "React" "remote"',
   'site:ycombinator.com/jobs "Frontend Engineer" "React" "remote"',
   'site:builtin.com/jobs "Senior Frontend Engineer" "remote"',
+  'site:builtin.com/job "Frontend Engineer" "Accessibility"',
+  'site:builtin.com/job "Frontend Engineer" "Contractor"',
   'site:levels.fyi/jobs "Frontend Engineer" "React" "remote"',
   'site:trueup.io/jobs "Frontend Engineer" "TypeScript" "remote"',
   'site:dice.com "Frontend Engineer" "React" "remote"',

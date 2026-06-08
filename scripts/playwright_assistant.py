@@ -121,7 +121,7 @@ SENSITIVE_PATTERNS = re.compile(
 DEMOGRAPHIC_FIELD_PATTERNS = {
     "race": re.compile(r"race|ethnic", re.I),
     "gender": re.compile(r"gender", re.I),
-    "veteranStatus": re.compile(r"veteran", re.I),
+    "veteranStatus": re.compile(r"veteran|military service|armed forces", re.I),
     "disability": re.compile(r"disab|ability status", re.I),
 }
 WORK_AUTHORIZATION_ELIGIBILITY_PATTERN = re.compile(
@@ -653,13 +653,19 @@ def fill_command_element(element: Any, value: str) -> None:
     tag = str(element.evaluate("node => node.tagName") or "").upper()
     input_type = str(element.get_attribute("type") or "").lower()
     if tag == "SELECT":
+        descriptor = field_descriptor(element)
+        option_value = matching_option_value(element, value, descriptor)
+        if option_value:
+            element.select_option(value=option_value, timeout=1500)
+            return
         try:
             element.select_option(label=value, timeout=1500)
         except Exception:
             element.select_option(value=value, timeout=1500)
         return
     if input_type in {"checkbox", "radio"}:
-        if value.lower() in {"yes", "true", "checked", "1"}:
+        descriptor = field_descriptor(element)
+        if value.lower() in {"yes", "true", "checked", "1"} or answer_matches_descriptor(value, descriptor):
             element.check(timeout=1500)
         return
     element.fill(value, timeout=2500)
@@ -1071,7 +1077,7 @@ def fill_matching_selects(page: Any, pattern: re.Pattern[str], answer: str) -> i
             descriptor = field_descriptor(element)
             if not pattern.search(descriptor) or not element.is_visible() or not element.is_enabled():
                 continue
-            option_value = matching_option_value(element, answer)
+            option_value = matching_option_value(element, answer, descriptor)
             if not option_value:
                 print(f"Configured demographic answer did not match options for: {descriptor[:120]}")
                 continue
@@ -1198,7 +1204,7 @@ def fill_memory_element(element: Any, answer: str, memory: dict[str, Any]) -> bo
         if input_type in {"hidden", "password", "file"}:
             return False
         if tag == "SELECT":
-            option_value = matching_option_value(element, answer)
+            option_value = matching_option_value(element, answer, descriptor)
             if not option_value:
                 return False
             element.select_option(value=option_value, timeout=1500)
@@ -1298,7 +1304,7 @@ def fill_phone_country_selects(page: Any) -> int:
                 current = normalize_for_match(select_current_text(element))
                 if "united states" in current or current in {"us", "usa", "1"} or "+1" in current:
                     continue
-            option_value = matching_option_value(element, PHONE_COUNTRY_ANSWER)
+            option_value = matching_option_value(element, PHONE_COUNTRY_ANSWER, descriptor)
             if not option_value:
                 print(f"Learned phone country answer did not match options for: {descriptor[:120]}")
                 continue
@@ -1525,7 +1531,7 @@ def select_current_text(select: Any) -> str:
         return ""
 
 
-def matching_option_value(select: Any, answer: str) -> str | None:
+def matching_option_value(select: Any, answer: str, field_descriptor_text: str = "") -> str | None:
     options = select.evaluate(
         """node => Array.from(node.options).map(option => ({
           value: option.value,
@@ -1535,14 +1541,21 @@ def matching_option_value(select: Any, answer: str) -> str | None:
     for option in options:
         text = str(option.get("text", ""))
         value = str(option.get("value", ""))
-        if answer_matches_descriptor(answer, f"{text} {value}"):
+        if answer_matches_descriptor(answer, f"{text} {value}", field_descriptor_text):
             return value
     return None
 
 
-def answer_matches_descriptor(answer: str, descriptor: str) -> bool:
+def answer_matches_descriptor(answer: str, descriptor: str, field_descriptor_text: str = "") -> bool:
     answer_tokens = normalize_for_match(answer)
     descriptor_tokens = normalize_for_match(descriptor)
+    field_tokens = normalize_for_match(field_descriptor_text)
+    if veteran_positive_answer(answer_tokens) and veteran_positive_option(descriptor_tokens, field_tokens):
+        return True
+    if veteran_negative_answer(answer_tokens) and veteran_negative_option(descriptor_tokens, field_tokens):
+        return True
+    if prefer_not_answer(answer_tokens) and prefer_not_option(descriptor_tokens):
+        return True
     if answer_tokens and answer_tokens in descriptor_tokens:
         return True
     if answer_tokens == normalize_for_match(PHONE_COUNTRY_ANSWER):
@@ -1560,6 +1573,70 @@ def answer_matches_descriptor(answer: str, descriptor: str) -> bool:
         if key in answer_tokens and any(value in descriptor_tokens for value in values):
             return True
     return False
+
+
+def veteran_positive_answer(answer_tokens: str) -> bool:
+    return (
+        "protected veteran" in answer_tokens
+        and not veteran_negative_answer(answer_tokens)
+        and not prefer_not_answer(answer_tokens)
+    ) or "i identify as one or more" in answer_tokens
+
+
+def veteran_negative_answer(answer_tokens: str) -> bool:
+    return (
+        "not a protected veteran" in answer_tokens
+        or "i am not a protected veteran" in answer_tokens
+        or "not protected veteran" in answer_tokens
+    )
+
+
+def prefer_not_answer(answer_tokens: str) -> bool:
+    return any(token in answer_tokens for token in [
+        "prefer not",
+        "decline",
+        "do not wish",
+        "dont wish",
+        "not disclose",
+        "do not want to answer",
+    ])
+
+
+def veteran_positive_option(descriptor_tokens: str, field_tokens: str) -> bool:
+    if "veteran" not in f"{descriptor_tokens} {field_tokens}":
+        return False
+    positive_phrases = [
+        "i identify as one or more",
+        "one or more of the classifications of protected veteran",
+        "protected veteran",
+        "active duty wartime",
+        "armed forces service medal",
+        "recently separated veteran",
+        "disabled veteran",
+    ]
+    negative_phrases = ["not a protected veteran", "not protected veteran", "i am not", "do not identify"]
+    return any(phrase in descriptor_tokens for phrase in positive_phrases) and not any(phrase in descriptor_tokens for phrase in negative_phrases)
+
+
+def veteran_negative_option(descriptor_tokens: str, field_tokens: str) -> bool:
+    if "veteran" not in f"{descriptor_tokens} {field_tokens}":
+        return False
+    return any(phrase in descriptor_tokens for phrase in [
+        "not a protected veteran",
+        "not protected veteran",
+        "i am not a protected veteran",
+        "i do not identify",
+    ])
+
+
+def prefer_not_option(descriptor_tokens: str) -> bool:
+    return any(phrase in descriptor_tokens for phrase in [
+        "prefer not",
+        "decline",
+        "do not wish",
+        "not disclose",
+        "do not want to answer",
+    ])
 
 
 def normalize_for_match(value: str) -> str:
