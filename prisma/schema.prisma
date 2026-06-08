@@ -453,6 +453,7 @@ model User {
   skillFeedback         SkillFeedback[]
   thankYouDrafts        ThankYouDraft[]
   jobSuppressions       JobSuppression[]
+  workflowSessions      DailyWorkflowSession[]
 }
 
 model CareerMission {
@@ -1652,6 +1653,16 @@ model NotificationSettings {
   notifyOnlyIfNewMatches Boolean    @default(true)
   minimumScoreForPush    Int        @default(85)
   digestMode             DigestMode @default(strong_matches_only)
+  workflowMorningReminderEnabled  Boolean @default(false)
+  workflowMorningReminderHour     Int     @default(9)
+  workflowMiddayReminderEnabled   Boolean @default(false)
+  workflowMiddayReminderHour      Int     @default(12)
+  workflowEveningReminderEnabled  Boolean @default(false)
+  workflowEveningReminderHour     Int     @default(17)
+  workflowWeeklyReminderEnabled   Boolean @default(false)
+  workflowWeeklyReminderDay       Int     @default(5)
+  workflowWeeklyReminderHour      Int     @default(9)
+  workflowReminderTimezone        String  @default("America/New_York")
   createdAt              DateTime   @default(now())
   updatedAt              DateTime   @updatedAt
   user                   User       @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1668,4 +1679,27 @@ model NotificationLog {
   sentAt    DateTime?
   createdAt DateTime         @default(now())
   user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model DailyWorkflowSession {
+  id            String                   @id @default(cuid())
+  userId        String
+  user          User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date          DateTime                 @db.Date
+  startedAt     DateTime                 @default(now())
+  completedAt   DateTime?
+  completionPct Int                      @default(0)
+  steps         DailyWorkflowStepLog[]
+
+  @@unique([userId, date])
+}
+
+model DailyWorkflowStepLog {
+  id              String               @id @default(cuid())
+  sessionId       String
+  session         DailyWorkflowSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  stepKey         String
+  completedAt     DateTime             @default(now())
+  durationSeconds Int?
+  metadata        Json?
 }

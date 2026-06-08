@@ -31,6 +31,7 @@ import { prisma } from "@/lib/prisma";
 import { getServiceFallbacks } from "@/lib/service-fallbacks";
 import { ServiceFallbackBanners } from "@/components/ui/service-fallback-banners";
 import { RunDailyPlanButton } from "./daily-plan-card";
+import { WorkflowStepBanner } from "@/components/workflow-coach/WorkflowStepBanner";
 
 export const dynamic = "force-dynamic";
 
@@ -150,6 +151,7 @@ export default async function DashboardPage() {
 
   return (
     <AppShell>
+      <WorkflowStepBanner stepKey="command-center" />
       <Stack spacing={3}>
         <PageHeader
           eyebrow="Command center"
@@ -199,8 +201,9 @@ export default async function DashboardPage() {
           </CardContent>
         </Card>
 
-        <SearchRunCommandCenter initialRun={latestRun ? serializeSearchRun(latestRun) : null} />
-
+        <Box data-workflow-target="search-run-section">
+          <SearchRunCommandCenter initialRun={latestRun ? serializeSearchRun(latestRun) : null} />
+        </Box>
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: "repeat(4, 1fr)" }, gap: 2 }}>
           <Metric label="Enabled profiles" value={profiles.length.toString()} helper="Active campaigns" />
           <Metric label="Exceptions" value={needsReviewCount.toString()} helper="Needs your decision" />
@@ -208,7 +211,7 @@ export default async function DashboardPage() {
           <Metric label="Latest run" value={latestRun?.status ?? "None"} helper={latestRun ? latestRun.startedAt.toLocaleString() : "No runs yet"} />
         </Box>
 
-        <Card>
+        <Card data-workflow-target="agency-run-section">
           <CardContent>
             <Stack spacing={1.5}>
               <Box>
@@ -359,7 +362,7 @@ export default async function DashboardPage() {
                 </CardContent>
               </Card>
 
-              <Card sx={{ borderColor: "primary.light" }}>
+              <Card sx={{ borderColor: "primary.light" }} data-workflow-target="daily-plan-section" data-plan-generated={dailyPlan?.actions?.length ? "true" : undefined}>
                 <CardContent>
                   <Stack spacing={2}>
                     <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ justifyContent: "space-between", alignItems: { sm: "center" } }}>
@@ -374,7 +377,9 @@ export default async function DashboardPage() {
                           </Typography>
                         ) : null}
                       </Box>
-                      <RunDailyPlanButton />
+                      <Box data-workflow-target="run-daily-plan-btn">
+                        <RunDailyPlanButton />
+                      </Box>
                     </Stack>
                     {dailyPlan?.actions?.length ? (
                       <Stack spacing={1}>

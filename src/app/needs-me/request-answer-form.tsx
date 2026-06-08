@@ -77,6 +77,7 @@ export function RequestAnswerForm({
         label="Answer for the agent"
         value={answer}
         onChange={(event) => setAnswer(event.target.value)}
+        slotProps={{ htmlInput: { "data-workflow-target": "blocker-answer-field" } }}
       />
       {canSaveMemory ? (
         <FormControlLabel

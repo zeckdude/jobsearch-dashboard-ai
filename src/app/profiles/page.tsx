@@ -21,6 +21,7 @@ import Typography from "@mui/material/Typography";
 import { AppShell } from "@/app/app-shell";
 import { ActionButton } from "@/components/action-button";
 import { PageHeader } from "@/components/ui/page-header";
+import { WorkflowStepBanner } from "@/components/workflow-coach/WorkflowStepBanner";
 import { ScoreChip } from "@/components/ui/score-chip";
 import { formatStatus } from "@/components/ui/status-chip";
 import { jsonArray } from "@/lib/json";
@@ -80,6 +81,7 @@ export default async function ProfilesPage() {
 
   return (
     <AppShell>
+      <WorkflowStepBanner stepKey="market-intelligence" />
       <Stack spacing={3}>
         <PageHeader
           eyebrow="Search strategy"
@@ -110,9 +112,11 @@ export default async function ProfilesPage() {
         <ProfileRebuildPanel />
         <ProfileOptimizerPanel latest={isRecord(latestOptimizerRun?.outputJson) ? latestOptimizerRun.outputJson as OptimizerOutput : null} />
         <SearchExpansionPanel latest={isRecord(latestExpansionRun?.outputJson) ? latestExpansionRun.outputJson as SearchExpansionPanelOutput : null} />
-        <MarketIntelligencePanel latest={isRecord(latestMarketRun?.outputJson) ? latestMarketRun.outputJson as MarketIntelligenceOutput : null} />
+        <Box data-workflow-target="market-intelligence-section">
+          <MarketIntelligencePanel latest={isRecord(latestMarketRun?.outputJson) ? latestMarketRun.outputJson as MarketIntelligenceOutput : null} />
+        </Box>
 
-        <TableContainer component={Card}>
+        <TableContainer component={Card} data-workflow-target="profile-list">
           <Table sx={{ minWidth: 920 }}>
             <TableHead>
               <TableRow>

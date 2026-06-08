@@ -22,6 +22,7 @@ import { DetectJobQualityControl } from "@/components/detect-job-quality-control
 import { EvaluateJobsControl } from "@/components/evaluate-jobs-control";
 import { PageHeader } from "@/components/ui/page-header";
 import { RunSearchControl } from "@/components/run-search-control";
+import { WorkflowStepBanner } from "@/components/workflow-coach/WorkflowStepBanner";
 import { submittedApplicationStatuses } from "@/lib/applications/job-filters";
 import { createApplicationCanonicalJobKeys, reconcileApplicationCanonicalState } from "@/lib/applications/reconciliation";
 import { jsonArray } from "@/lib/json";
@@ -105,6 +106,7 @@ export default async function JobsPage({ searchParams }: { searchParams?: { stat
 
   return (
     <AppShell>
+      <WorkflowStepBanner stepKey="jobs-review" />
       <Stack spacing={3}>
         <PageHeader
           eyebrow="Decision queue"

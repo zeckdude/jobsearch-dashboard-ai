@@ -16,6 +16,7 @@ import { reconcileApplicationCanonicalState, visibleCanonicalApplications } from
 import { AssistantWorkbench } from "./assistant-workbench";
 import { getServiceFallbacks } from "@/lib/service-fallbacks";
 import { ServiceFallbackBanners } from "@/components/ui/service-fallback-banners";
+import { WorkflowStepBanner } from "@/components/workflow-coach/WorkflowStepBanner";
 
 export const dynamic = "force-dynamic";
 
@@ -93,6 +94,7 @@ export default async function ApplicationAssistantPage({ searchParams }: { searc
 
   return (
     <AppShell>
+      <WorkflowStepBanner stepKey="apply-sprint" />
       <Stack spacing={3}>
         <PageHeader
           eyebrow="Application assistant"
@@ -106,6 +108,7 @@ export default async function ApplicationAssistantPage({ searchParams }: { searc
         />
         <ServiceFallbackBanners items={fallbacks} />
         <AssistantWorkbench
+          data-workflow-target="ready-to-apply-list"
           initialApplicationId={searchParams?.applicationId}
           atsBlockers={atsBlockers}
           applications={visibleApplications.map((application) => ({

@@ -968,6 +968,7 @@ export default async function SettingsPage({ searchParams }: { searchParams?: { 
           }}
           companyAutomationPolicies={companyAutomationPolicies}
           serviceHealthSettings={serviceHealthSettings}
+          highlight={searchParams?.highlight}
         />
       </Stack>
     </AppShell>
@@ -1288,6 +1289,7 @@ const SETTINGS_SECTIONS = [
   { href: "#settings-ai", label: "AI provider" },
   { href: "#settings-email-sync", label: "Email sync" },
   { href: "#settings-notifications", label: "Notifications" },
+  { href: "#settings-workflow-reminders", label: "Workflow reminders" },
   { href: "#settings-cron", label: "Scheduled search" },
   { href: "#settings-automation", label: "Automation" },
   { href: "#settings-company-sources", label: "Company sources" },

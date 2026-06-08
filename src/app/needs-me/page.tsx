@@ -22,6 +22,7 @@ import { getServiceFallbacks } from "@/lib/service-fallbacks";
 import { ServiceFallbackBanners } from "@/components/ui/service-fallback-banners";
 import { NeedsMeLiveRefresh } from "./needs-me-live-refresh";
 import { RequestAnswerForm } from "./request-answer-form";
+import { WorkflowStepBanner } from "@/components/workflow-coach/WorkflowStepBanner";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +43,7 @@ export default async function NeedsMePage() {
 
   return (
     <AppShell>
+      <WorkflowStepBanner stepKey="needs-me" />
       <Stack spacing={3}>
         <PageHeader
           eyebrow="Agent blockers"
@@ -53,7 +55,7 @@ export default async function NeedsMePage() {
           <NeedsMeLiveRefresh />
         </Stack>
 
-        <Card sx={{ borderColor: nextRequest ? "warning.main" : "success.main", bgcolor: nextRequest ? "rgba(245, 158, 11, 0.08)" : "rgba(16, 185, 129, 0.08)" }}>
+        <Card data-workflow-target="needs-me-status" data-has-blockers={requests.length > 0 ? "true" : undefined} sx={{ borderColor: nextRequest ? "warning.main" : "success.main", bgcolor: nextRequest ? "rgba(245, 158, 11, 0.08)" : "rgba(16, 185, 129, 0.08)" }}>
           <CardContent>
             <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
               <Box>
@@ -84,7 +86,7 @@ export default async function NeedsMePage() {
             <EmptyState title="No open requests" body="When an agent needs a decision, missing answer, or manual intervention, it will appear here." />
           </Card>
         ) : (
-          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "repeat(2, 1fr)" }, gap: 2 }}>
+          <Box data-workflow-target="blocker-list" sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "repeat(2, 1fr)" }, gap: 2 }}>
             {requests.map((request) => {
               const job = request.application?.jobPosting ?? request.jobPosting;
 
@@ -129,6 +131,7 @@ export default async function NeedsMePage() {
                             Dismiss
                           </ActionButton>
                           <ActionButton
+                            data-workflow-target="blocker-resolve-btn"
                             postTo={`/api/agent-user-requests/${request.id}/resolve`}
                             body={{ status: "RESOLVED" }}
                             size="small"

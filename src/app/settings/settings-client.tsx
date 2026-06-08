@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import Link from "next/link";
 import { ServiceHealthPanel } from "./service-health-panel";
 import type { ServiceHealthSettings } from "./service-health-panel";
@@ -22,7 +23,7 @@ import Stack from "@mui/material/Stack";
 import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ScoreChip } from "@/components/ui/score-chip";
 import { StatusChip } from "@/components/ui/status-chip";
 
@@ -130,9 +131,10 @@ type SettingsClientProps = {
     notes: string | null;
   }>;
   serviceHealthSettings: ServiceHealthSettings;
+  highlight?: string;
 };
 
-export function SettingsClient({ initialSettings, aiSettings, langSmithSettings, emailSyncSettings, sourceSettings, profileSettings, latestGithubReview, cronSettings, automationSettings, companyAutomationPolicies: initialCompanyAutomationPolicies, serviceHealthSettings }: SettingsClientProps) {
+export function SettingsClient({ initialSettings, aiSettings, langSmithSettings, emailSyncSettings, sourceSettings, profileSettings, latestGithubReview, cronSettings, automationSettings, companyAutomationPolicies: initialCompanyAutomationPolicies, serviceHealthSettings, highlight }: SettingsClientProps) {
   const [settings, setSettings] = useState(initialSettings);
   const [profile, setProfile] = useState(profileSettings);
   const [cron, setCron] = useState(cronSettings);
@@ -988,6 +990,296 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
           </Stack>
         </CardContent>
       </Card>
+      <WorkflowReminderCard highlight={highlight} />
     </Stack>
+  );
+}
+
+// ---- Daily Workflow Reminder Card ----
+
+type ReminderSettings = {
+  workflowMorningReminderEnabled: boolean;
+  workflowMorningReminderHour: number;
+  workflowMiddayReminderEnabled: boolean;
+  workflowMiddayReminderHour: number;
+  workflowEveningReminderEnabled: boolean;
+  workflowEveningReminderHour: number;
+  workflowWeeklyReminderEnabled: boolean;
+  workflowWeeklyReminderDay: number;
+  workflowWeeklyReminderHour: number;
+  workflowReminderTimezone: string;
+};
+
+const DEFAULT_REMINDERS: ReminderSettings = {
+  workflowMorningReminderEnabled: false,
+  workflowMorningReminderHour: 9,
+  workflowMiddayReminderEnabled: false,
+  workflowMiddayReminderHour: 12,
+  workflowEveningReminderEnabled: false,
+  workflowEveningReminderHour: 17,
+  workflowWeeklyReminderEnabled: false,
+  workflowWeeklyReminderDay: 5,
+  workflowWeeklyReminderHour: 9,
+  workflowReminderTimezone: "America/New_York",
+};
+
+const HOURS = Array.from({ length: 24 }, (_, i) => ({
+  value: i,
+  label: new Date(2000, 0, 1, i).toLocaleTimeString("en-US", { hour: "numeric", hour12: true }),
+}));
+
+const DAYS_OF_WEEK = [
+  { value: 1, label: "Monday" },
+  { value: 2, label: "Tuesday" },
+  { value: 3, label: "Wednesday" },
+  { value: 4, label: "Thursday" },
+  { value: 5, label: "Friday" },
+  { value: 6, label: "Saturday" },
+  { value: 0, label: "Sunday" },
+];
+
+const TIMEZONES = [
+  "America/New_York",
+  "America/Chicago",
+  "America/Denver",
+  "America/Los_Angeles",
+  "America/Anchorage",
+  "Pacific/Honolulu",
+  "Europe/London",
+  "Europe/Paris",
+  "Europe/Berlin",
+  "Asia/Tokyo",
+  "Asia/Shanghai",
+  "Australia/Sydney",
+];
+
+const NUDGE_DISMISSED_KEY = "wc-settings-nudge-dismissed";
+
+function ReminderRow({
+  label,
+  enabled,
+  hour,
+  onToggle,
+  onHourChange,
+  extraField,
+}: {
+  label: string;
+  enabled: boolean;
+  hour: number;
+  onToggle: (v: boolean) => void;
+  onHourChange: (h: number) => void;
+  extraField?: React.ReactNode;
+}) {
+  const [nudgeDismissed, setNudgeDismissed] = useState(() => {
+    if (typeof window !== "undefined") return localStorage.getItem(`${NUDGE_DISMISSED_KEY}-${label}`) === "1";
+    return false;
+  });
+
+  const dismissNudge = () => {
+    setNudgeDismissed(true);
+    localStorage.setItem(`${NUDGE_DISMISSED_KEY}-${label}`, "1");
+  };
+
+  return (
+    <Box>
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ alignItems: { sm: "center" } }}>
+        <FormControlLabel
+          control={
+            <Switch
+              checked={enabled}
+              onChange={(e) => onToggle(e.target.checked)}
+              size="small"
+            />
+          }
+          label={
+            <Typography variant="body2" sx={{ fontWeight: 600, minWidth: 120 }}>
+              {label}
+            </Typography>
+          }
+          sx={{ mr: 0 }}
+        />
+        {enabled && (
+          <TextField
+            select
+            size="small"
+            label="Time"
+            value={hour}
+            onChange={(e) => onHourChange(Number(e.target.value))}
+            sx={{ minWidth: 140 }}
+          >
+            {HOURS.map((h) => (
+              <MenuItem key={h.value} value={h.value}>{h.label}</MenuItem>
+            ))}
+          </TextField>
+        )}
+        {extraField}
+      </Stack>
+      {!enabled && !nudgeDismissed && (
+        <Alert
+          severity="info"
+          sx={{ mt: 0.75, py: 0.25 }}
+          onClose={dismissNudge}
+        >
+          <Typography variant="caption">
+            Enable this reminder to stay consistent — it takes one tap.
+          </Typography>
+        </Alert>
+      )}
+    </Box>
+  );
+}
+
+function WorkflowReminderCard({ highlight }: { highlight?: string }) {
+  const [settings, setSettings] = useState<ReminderSettings>(DEFAULT_REMINDERS);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [highlighted, setHighlighted] = useState(false);
+  const cardRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    fetch("/api/settings/workflow-reminders")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data && typeof data === "object") {
+          setSettings({ ...DEFAULT_REMINDERS, ...(data as Partial<ReminderSettings>) });
+        }
+      })
+      .catch(() => setLoadError(true));
+  }, []);
+
+  useEffect(() => {
+    if (highlight !== "workflow-reminders") return;
+    setHighlighted(true);
+    const scrollTimer = setTimeout(() => {
+      cardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 150);
+    const clearTimer = setTimeout(() => setHighlighted(false), 3800);
+    return () => {
+      clearTimeout(scrollTimer);
+      clearTimeout(clearTimer);
+    };
+  }, [highlight]);
+
+  const update = <K extends keyof ReminderSettings>(key: K, value: ReminderSettings[K]) => {
+    setSettings((prev) => ({ ...prev, [key]: value }));
+    setSaved(false);
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await fetch("/api/settings/workflow-reminders", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(settings),
+      });
+      setSaved(true);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card
+      ref={cardRef}
+      id="settings-workflow-reminders"
+      sx={{
+        scrollMarginTop: 80,
+        borderColor: highlighted ? "primary.main" : "divider",
+        transition: "border-color 0.3s",
+        "@keyframes workflowRemindersHighlight": {
+          "0%, 100%": { backgroundColor: "transparent" },
+          "50%": { backgroundColor: "rgba(25, 118, 210, 0.10)" },
+        },
+        animation: highlighted ? "workflowRemindersHighlight 1.2s ease-in-out 3" : "none",
+      }}
+    >
+      <CardContent>
+        <Stack spacing={2.5}>
+          <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
+            <NotificationsActiveOutlinedIcon color="primary" />
+            <Typography variant="h3">Daily Workflow Reminders</Typography>
+          </Stack>
+
+          {loadError && (
+            <Alert severity="warning">Could not load reminder settings.</Alert>
+          )}
+
+          <Typography variant="body2" color="text.secondary">
+            Get a push/email nudge when it&apos;s time for each part of your daily workflow. The cron checks hourly and only sends if the steps aren&apos;t done yet. All off by default — turn on what you need.
+          </Typography>
+
+          <TextField
+            select
+            size="small"
+            label="Your timezone"
+            value={settings.workflowReminderTimezone}
+            onChange={(e) => update("workflowReminderTimezone", e.target.value)}
+            sx={{ maxWidth: 260 }}
+          >
+            {TIMEZONES.map((tz) => (
+              <MenuItem key={tz} value={tz}>{tz}</MenuItem>
+            ))}
+          </TextField>
+
+          <Stack spacing={2}>
+            <ReminderRow
+              label="Morning"
+              enabled={settings.workflowMorningReminderEnabled}
+              hour={settings.workflowMorningReminderHour}
+              onToggle={(v) => update("workflowMorningReminderEnabled", v)}
+              onHourChange={(h) => update("workflowMorningReminderHour", h)}
+            />
+            <ReminderRow
+              label="Midday"
+              enabled={settings.workflowMiddayReminderEnabled}
+              hour={settings.workflowMiddayReminderHour}
+              onToggle={(v) => update("workflowMiddayReminderEnabled", v)}
+              onHourChange={(h) => update("workflowMiddayReminderHour", h)}
+            />
+            <ReminderRow
+              label="Evening"
+              enabled={settings.workflowEveningReminderEnabled}
+              hour={settings.workflowEveningReminderHour}
+              onToggle={(v) => update("workflowEveningReminderEnabled", v)}
+              onHourChange={(h) => update("workflowEveningReminderHour", h)}
+            />
+            <ReminderRow
+              label="Weekly"
+              enabled={settings.workflowWeeklyReminderEnabled}
+              hour={settings.workflowWeeklyReminderHour}
+              onToggle={(v) => update("workflowWeeklyReminderEnabled", v)}
+              onHourChange={(h) => update("workflowWeeklyReminderHour", h)}
+              extraField={
+                settings.workflowWeeklyReminderEnabled ? (
+                  <TextField
+                    select
+                    size="small"
+                    label="Day"
+                    value={settings.workflowWeeklyReminderDay}
+                    onChange={(e) => update("workflowWeeklyReminderDay", Number(e.target.value))}
+                    sx={{ minWidth: 140 }}
+                  >
+                    {DAYS_OF_WEEK.map((d) => (
+                      <MenuItem key={d.value} value={d.value}>{d.label}</MenuItem>
+                    ))}
+                  </TextField>
+                ) : undefined
+              }
+            />
+          </Stack>
+
+          <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+            <Button variant="contained" disabled={saving} onClick={save}>
+              {saving ? "Saving..." : "Save reminders"}
+            </Button>
+            {saved && (
+              <Typography variant="caption" color="success.main">Saved!</Typography>
+            )}
+          </Stack>
+        </Stack>
+      </CardContent>
+    </Card>
   );
 }

@@ -22,6 +22,7 @@ import { AgencyRunControl } from "@/components/agency-run-control";
 import { BulkPrepareControl } from "@/components/bulk-prepare-control";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
+import { WorkflowStepBanner } from "@/components/workflow-coach/WorkflowStepBanner";
 import { StatusChip, formatStatus } from "@/components/ui/status-chip";
 import { applicationJobKeySet, hasApplicationForJob } from "@/lib/applications/job-filters";
 import { reconcileApplicationCanonicalState, visibleCanonicalApplications } from "@/lib/applications/reconciliation";
@@ -97,6 +98,7 @@ export default async function ApplicationsPage() {
 
   return (
     <AppShell>
+      <WorkflowStepBanner stepKey="update-applications" />
       <Stack spacing={3}>
         <PageHeader
           eyebrow="Application control"
