@@ -67,7 +67,7 @@ const SERVICE_CATALOG: ServiceDef[] = [
     id: "brave",
     name: "Brave Search",
     description:
-      "Powers the Search Query Backlog job source, which finds roles via web search in addition to direct ATS crawls. Required to use any search-query-type source template. Without it, only ATS adapters and company career pages are probed.",
+      "Powers the Web search source, which finds roles via Brave in addition to direct ATS crawls. Required to use any search-query-type source template. Without it, only ATS adapters and company career pages are probed.",
     guideAnchor: "brave-search-api",
     optional: true,
   },

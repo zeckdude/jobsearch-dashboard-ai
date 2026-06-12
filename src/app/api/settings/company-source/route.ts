@@ -1,6 +1,15 @@
 import { NextResponse } from "next/server";
 import { apiError } from "@/lib/api";
-import { addCompanySourceToConfig, configToPrismaJson, defaultCompanySourceConfig, normalizeCompanySourceConfig } from "@/lib/job-search/company-source-config";
+import {
+  addCompanySourceToConfig,
+  configToPrismaJson,
+  defaultCompanySourceConfig,
+  normalizeCompanySourceConfig,
+  removeCompanySource,
+  setCompanySourceEnabled,
+} from "@/lib/job-search/company-source-config";
+import { CANONICAL_SOURCE_NAMES } from "@/lib/job-search/source-display";
+import { companySiteSourceWhere, renameLegacyJobSourceNames } from "@/lib/job-search/source-records";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +20,7 @@ export async function PATCH(request: Request) {
     const source = await getCompanySource();
     const current = normalizeCompanySourceConfig(source.config);
     const reset = body.reset === true;
-    const nextConfig = reset
+    let nextConfig = reset
       ? defaultCompanySourceConfig()
       : {
           ...current,
@@ -20,6 +29,13 @@ export async function PATCH(request: Request) {
           maxJobsPerCompany: typeof body.maxJobsPerCompany === "number" ? body.maxJobsPerCompany : current.maxJobsPerCompany,
           maxFetch: typeof body.maxFetch === "number" ? body.maxFetch : current.maxFetch,
         };
+
+    if (!reset && typeof body.removeCompany === "string" && body.removeCompany.trim()) {
+      nextConfig = removeCompanySource(nextConfig, body.removeCompany);
+    } else if (!reset && typeof body.companyName === "string" && body.companyName.trim() && typeof body.companyEnabled === "boolean") {
+      nextConfig = setCompanySourceEnabled(nextConfig, body.companyName, body.companyEnabled);
+    }
+
     const normalized = normalizeCompanySourceConfig(nextConfig);
     const updated = await prisma.jobSource.update({
       where: { id: source.id },
@@ -32,7 +48,13 @@ export async function PATCH(request: Request) {
     return NextResponse.json({
       enabled: updated.enabled,
       config: normalizeCompanySourceConfig(updated.config),
-      message: reset ? "Company source list reset to defaults." : "Company source settings saved.",
+      message: reset
+        ? "Company watchlist reset to defaults."
+        : typeof body.removeCompany === "string"
+          ? `${body.removeCompany} removed from the company watchlist.`
+          : typeof body.companyName === "string"
+            ? `${body.companyName} ${body.companyEnabled ? "enabled" : "paused"}.`
+            : "Company source settings saved.",
     });
   } catch (error) {
     return apiError(error, 400);
@@ -60,7 +82,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       enabled: updated.enabled,
       config: normalizeCompanySourceConfig(updated.config),
-      message: `${body.name} added to the company source list.`,
+      message: `${body.name} added to the company watchlist.`,
     });
   } catch (error) {
     return apiError(error, 400);
@@ -68,11 +90,12 @@ export async function POST(request: Request) {
 }
 
 async function getCompanySource() {
+  await renameLegacyJobSourceNames(prisma);
   return prisma.jobSource.upsert({
-    where: { type_name: { type: "company_site", name: "Company Source List" } },
+    where: companySiteSourceWhere,
     update: {},
     create: {
-      name: "Company Source List",
+      name: CANONICAL_SOURCE_NAMES.companySite,
       type: "company_site",
       enabled: true,
       config: configToPrismaJson(defaultCompanySourceConfig()),

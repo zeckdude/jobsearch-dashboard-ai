@@ -154,6 +154,6 @@ function buildSourceNotes(job: ResearchJob) {
   ];
   if (job.applicationUrl) notes.push("Application URL is saved.");
   const rawData = job.rawData && typeof job.rawData === "object" && !Array.isArray(job.rawData) ? job.rawData as Record<string, unknown> : {};
-  if (rawData.companySource === true) notes.push("Found through the curated company source list.");
+  if (rawData.companySource === true) notes.push("Found through the company watchlist.");
   return notes;
 }

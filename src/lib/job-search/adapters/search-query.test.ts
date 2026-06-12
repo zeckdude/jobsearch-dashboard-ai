@@ -227,7 +227,7 @@ function profile(input: Partial<JobSearchProfile> = {}) {
 function source(config: Record<string, unknown> = {}) {
   return {
     id: "source_1",
-    name: "Search Query Backlog",
+    name: "Web search",
     type: "search_query",
     baseUrl: "https://search.brave.com",
     enabled: true,

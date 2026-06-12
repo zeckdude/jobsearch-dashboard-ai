@@ -26,6 +26,7 @@ import Typography from "@mui/material/Typography";
 import { notFound } from "next/navigation";
 import { AppShell } from "@/app/app-shell";
 import { ActionButton } from "@/components/action-button";
+import { ProfileLink } from "@/components/profile-link";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { ScoreChip } from "@/components/ui/score-chip";
@@ -149,7 +150,7 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
           },
         },
         jobProfileMatch: {
-          include: { jobSearchProfile: { select: { name: true } } },
+          include: { jobSearchProfile: { select: { id: true, name: true } } },
         },
         resume: true,
         outcomes: { orderBy: { occurredAt: "desc" }, take: 12 },
@@ -271,7 +272,15 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
 
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(5, 1fr)" }, gap: 2 }}>
           <Metric label="Status" value={<StatusChip status={application.status} />} helper="Application workflow" />
-          <Metric label="Match" value={application.jobProfileMatch ? <ScoreChip score={application.jobProfileMatch.overallScore} /> : "n/a"} helper={application.jobProfileMatch?.jobSearchProfile.name ?? "No matched profile"} />
+          <Metric
+            label="Match"
+            value={application.jobProfileMatch ? <ScoreChip score={application.jobProfileMatch.overallScore} /> : "n/a"}
+            helper={
+              application.jobProfileMatch
+                ? <ProfileLink profileId={application.jobProfileMatch.jobSearchProfile.id} name={application.jobProfileMatch.jobSearchProfile.name} fontWeight={600} />
+                : "No matched profile"
+            }
+          />
           <Metric label="Opportunity" value={evaluation ? <ScoreChip score={evaluation.opportunityScore} /> : "n/a"} helper={evaluation?.recommendedResumeProfile ?? "Not evaluated"} />
           <Metric label="QA" value={qa ? <ScoreChip score={qa.score ?? 0} label={qa.status === "PASS" ? "Pass" : "Review"} /> : "pending"} helper={qaIssues.length ? `${qaIssues.length} review items` : "No issues saved"} />
           <Metric label="Packet" value={packet ? <StatusChip status={packet.status} /> : "pending"} helper={packet ? `Updated ${packet.updatedAt.toLocaleString()}` : "Prepare package to persist"} />
@@ -715,7 +724,7 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
   );
 }
 
-function Metric({ label, value, helper }: { label: string; value: React.ReactNode; helper: string }) {
+function Metric({ label, value, helper }: { label: string; value: React.ReactNode; helper: React.ReactNode }) {
   return (
     <Card>
       <CardContent>

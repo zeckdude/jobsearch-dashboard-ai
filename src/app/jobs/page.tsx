@@ -25,36 +25,52 @@ import { RunSearchControl } from "@/components/run-search-control";
 import { WorkflowStepBanner } from "@/components/workflow-coach/WorkflowStepBanner";
 import { submittedApplicationStatuses } from "@/lib/applications/job-filters";
 import { createApplicationCanonicalJobKeys, reconcileApplicationCanonicalState } from "@/lib/applications/reconciliation";
-import { jsonArray } from "@/lib/json";
+import { jsonArray, jsonRecordArray } from "@/lib/json";
 import { uniqueMatchesByCanonicalJob } from "@/lib/job-search/unique-matches";
+import { loadFavoritedJobIds } from "@/lib/jobs/favorites";
 import { isJobSuppressed, loadJobSuppressionStatesByUserIds } from "@/lib/jobs/suppression";
+import { formatStoredJobSourceLabel } from "@/lib/job-search/source-display";
 import { prisma } from "@/lib/prisma";
 import { getServiceFallbacks } from "@/lib/service-fallbacks";
 import { ServiceFallbackBanners } from "@/components/ui/service-fallback-banners";
+import { ProfileLink } from "@/components/profile-link";
 import { JobsTable } from "./jobs-table";
 
 export const dynamic = "force-dynamic";
 
 type StatusView = "active" | "rejected" | "archived" | "all";
+type MatchView = "full" | "partial";
 
-export default async function JobsPage({ searchParams }: { searchParams?: { statusView?: string; q?: string; company?: string } }) {
+export default async function JobsPage({ searchParams }: { searchParams?: { statusView?: string; matchView?: string; q?: string; company?: string; job?: string; profile?: string } }) {
   await reconcileApplicationCanonicalState({ source: "jobs_page" }).catch(() => null);
   const statusView = normalizeStatusView(searchParams?.statusView);
+  const matchView = normalizeMatchView(searchParams?.matchView);
   const searchQuery = normalizeSearchQuery(searchParams?.q ?? searchParams?.company);
-  const [matches, submittedApplications] = await Promise.all([
+  const profileFilterId = searchParams?.profile?.trim() || undefined;
+  const initialSelectedJobId = searchParams?.job ?? undefined;
+  const user = await prisma.user.findFirst({ orderBy: { createdAt: "asc" }, select: { id: true } });
+  const favoritedJobIds = user ? Array.from(await loadFavoritedJobIds(user.id)) : [];
+  const filteredProfile = profileFilterId
+    ? await prisma.jobSearchProfile.findUnique({ where: { id: profileFilterId }, select: { id: true, name: true } })
+    : null;
+
+  const [matches, partialCount, submittedApplications] = await Promise.all([
     prisma.jobProfileMatch.findMany({
-      where: statusWhere(statusView, searchQuery),
+      where: statusWhere(statusView, matchView, searchQuery, profileFilterId),
       include: {
         jobPosting: {
           include: { source: true },
         },
         jobSearchProfile: {
-          select: { name: true, userId: true },
+          select: { id: true, name: true, userId: true },
         },
       },
       orderBy: [{ status: "asc" }, { overallScore: "desc" }, { createdAt: "desc" }],
       take: 250,
     }),
+    statusView === "active"
+      ? prisma.jobProfileMatch.count({ where: statusWhere("active", "partial", searchQuery, profileFilterId) })
+      : Promise.resolve(0),
     prisma.application.findMany({
       where: { status: { in: submittedApplicationStatuses } },
       select: {
@@ -99,7 +115,7 @@ export default async function JobsPage({ searchParams }: { searchParams?: { stat
       })
     : [];
   const evaluationByMatch = new Map(evaluations.map((evaluation) => [`${evaluation.jobPostingId}:${evaluation.jobSearchProfileId}`, evaluation]));
-  const topReviewMatch = visibleMatches.find((match) => match.status === "needs_review") ?? null;
+  const topReviewMatch = visibleMatches.find((match) => match.status === "needs_review" && (statusView !== "active" || match.matchTier === (matchView === "partial" ? "partial" : "full"))) ?? null;
   const approvedForPrep = visibleMatches.filter((match) => ["approved", "resume_generated", "cover_letter_generated"].includes(match.status));
 
   const fallbacks = getServiceFallbacks(["openai", "brave"]);
@@ -110,8 +126,10 @@ export default async function JobsPage({ searchParams }: { searchParams?: { stat
       <Stack spacing={3}>
         <PageHeader
           eyebrow="Decision queue"
-          title="Job Exceptions"
-          description="Review borderline roles the recruiting agency did not confidently approve. Strong fits are approved and prepared automatically after search."
+          title={matchView === "partial" ? "Partial Matches" : "Full Matches"}
+          description={matchView === "partial"
+            ? "These jobs passed core role checks but missed secondary requirements like unknown salary or contract wording. Review when you have time."
+            : "Jobs that meet every hard requirement for their profile. Start here for the most conclusive opportunities."}
           actions={
             <>
               <ActionButton href="/jobs/manual" variant="outlined" startIcon={<AddIcon />}>Add manual job</ActionButton>
@@ -123,6 +141,19 @@ export default async function JobsPage({ searchParams }: { searchParams?: { stat
         />
         <ServiceFallbackBanners items={fallbacks} />
 
+        {filteredProfile ? (
+          <Card>
+            <CardContent>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ alignItems: { sm: "center" }, justifyContent: "space-between" }}>
+                <Typography variant="body2" color="text.secondary">
+                  Showing review queue for <ProfileLink profileId={filteredProfile.id} name={filteredProfile.name} fontWeight={700} />.
+                </Typography>
+                <ActionButton href="/jobs" variant="outlined" size="small">Clear profile filter</ActionButton>
+              </Stack>
+            </CardContent>
+          </Card>
+        ) : null}
+
         <Card sx={{ borderColor: topReviewMatch ? "primary.main" : approvedForPrep.length ? "success.main" : "divider", bgcolor: topReviewMatch ? "rgba(37, 99, 235, 0.08)" : approvedForPrep.length ? "rgba(16, 185, 129, 0.08)" : "background.paper" }}>
           <CardContent>
             <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
@@ -133,11 +164,11 @@ export default async function JobsPage({ searchParams }: { searchParams?: { stat
                   {approvedForPrep.length ? <Chip size="small" variant="outlined" label={`${approvedForPrep.length} approved`} /> : null}
                 </Stack>
                 <Typography variant="h3">
-                  {topReviewMatch ? "Review the top exception" : approvedForPrep.length ? "Prepare approved jobs" : "Run discovery"}
+                  {topReviewMatch ? (matchView === "partial" ? "Review top partial match" : "Review top full match") : approvedForPrep.length ? "Prepare approved jobs" : "Run discovery"}
                 </Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                   {topReviewMatch
-                    ? `${topReviewMatch.jobPosting.company} - ${topReviewMatch.jobPosting.title} needs your decision before the agency can move it forward.`
+                    ? `${topReviewMatch.jobPosting.company} - ${topReviewMatch.jobPosting.title} is ready for your decision.`
                     : approvedForPrep.length
                       ? "Approved jobs are ready for tailored resumes, cover letters, and application packets."
                       : "No reviewable jobs are waiting. Run discovery or add a manual job."}
@@ -166,6 +197,7 @@ export default async function JobsPage({ searchParams }: { searchParams?: { stat
               sx={{ alignItems: { md: "center" } }}
             >
               {statusView === "active" ? null : <input type="hidden" name="statusView" value={statusView} />}
+              {matchView === "full" ? null : <input type="hidden" name="matchView" value={matchView} />}
               <TextField
                 fullWidth
                 size="small"
@@ -200,9 +232,23 @@ export default async function JobsPage({ searchParams }: { searchParams?: { stat
           </CardContent>
         </Card>
 
+        {matchView === "partial" && statusView === "active" ? (
+          <Card>
+            <CardContent>
+              <Typography variant="body2" color="text.secondary">
+                Partial matches did not fail hard filters (wrong country, wrong work mode, closed listing, wrong title). They failed softer checks like salary unknown, below-minimum pay, or contract wording.
+              </Typography>
+            </CardContent>
+          </Card>
+        ) : null}
+
         <JobsTable
           searchQuery={searchQuery}
           statusView={statusView}
+          matchView={matchView}
+          partialCount={partialCount}
+          initialSelectedJobId={initialSelectedJobId}
+          favoritedJobIds={favoritedJobIds}
           matches={visibleMatches.map((match) => {
             const evaluation = evaluationByMatch.get(`${match.jobPostingId}:${match.jobSearchProfileId}`);
             return {
@@ -213,13 +259,18 @@ export default async function JobsPage({ searchParams }: { searchParams?: { stat
               opportunityScore: evaluation?.opportunityScore ?? null,
               duplicateGroupId: match.jobPosting.duplicateGroupId,
               score: match.overallScore,
+              matchTier: match.matchTier,
               staleScore: match.jobPosting.staleScore,
               title: match.jobPosting.title,
               company: match.jobPosting.company,
               location: match.jobPosting.location ?? "Unknown location",
               status: match.status,
+              applicationUrl: match.jobPosting.applicationUrl ?? null,
+              profileId: match.jobSearchProfile.id,
               profileName: match.jobSearchProfile.name,
-              sourceName: match.jobPosting.source?.name ?? "Manual",
+              failedRequirements: jsonRecordArray<{ code: string; label: string; severity: string }>(match.failedRequirements),
+              passedRequirements: jsonRecordArray<{ code: string; label: string }>(match.passedRequirements),
+              sourceName: formatStoredJobSourceLabel(match.jobPosting.source, match.jobPosting),
               strongestMatches: jsonArray(match.strongestMatches),
               applicationState: (() => {
                 const application = createApplicationCanonicalJobKeys(match.jobPosting)
@@ -245,11 +296,15 @@ function normalizeStatusView(value: string | undefined): StatusView {
   return value === "rejected" || value === "archived" || value === "all" ? value : "active";
 }
 
+function normalizeMatchView(value: string | undefined): MatchView {
+  return value === "partial" ? "partial" : "full";
+}
+
 function normalizeSearchQuery(value: string | undefined) {
   return value?.trim().replace(/\s+/g, " ").slice(0, 80) ?? "";
 }
 
-function statusWhere(statusView: StatusView, searchQuery = ""): Prisma.JobProfileMatchWhereInput {
+function statusWhere(statusView: StatusView, matchView: MatchView = "full", searchQuery = "", profileId?: string): Prisma.JobProfileMatchWhereInput {
   const jobPostingWhere: Prisma.JobPostingWhereInput = {
     ...(searchQuery
       ? {
@@ -261,11 +316,14 @@ function statusWhere(statusView: StatusView, searchQuery = ""): Prisma.JobProfil
         }
       : {}),
   };
-  if (statusView === "rejected") return { status: { in: ["rejected"] }, jobPosting: jobPostingWhere };
-  if (statusView === "archived") return { status: { in: ["archived"] }, jobPosting: jobPostingWhere };
-  if (statusView === "all") return { jobPosting: jobPostingWhere };
+  const profileWhere = profileId ? { jobSearchProfileId: profileId } : {};
+  if (statusView === "rejected") return { ...profileWhere, status: { in: ["rejected"] }, jobPosting: jobPostingWhere };
+  if (statusView === "archived") return { ...profileWhere, status: { in: ["archived"] }, jobPosting: jobPostingWhere };
+  if (statusView === "all") return { ...profileWhere, jobPosting: jobPostingWhere };
   return {
+    ...profileWhere,
     status: { notIn: ["rejected", "archived"] },
+    matchTier: matchView === "partial" ? "partial" : "full",
     jobPosting: {
       ...jobPostingWhere,
       applications: {

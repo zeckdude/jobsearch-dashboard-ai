@@ -3,6 +3,7 @@ export const metadata = {
   description: "Inspect job search runs and discovery execution history.",
 };
 
+import Link from "next/link";
 import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import Box from "@mui/material/Box";
@@ -23,6 +24,7 @@ import { RunSearchControl } from "@/components/run-search-control";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusChip } from "@/components/ui/status-chip";
+import { searchRunStagePath } from "@/lib/job-search/run-items";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -92,10 +94,18 @@ export default async function RunsPage() {
                   <TableRow key={run.id} hover>
                     <TableCell>{run.startedAt.toLocaleString()}</TableCell>
                     <TableCell><StatusChip status={run.status} /></TableCell>
-                    <TableCell sx={{ fontVariantNumeric: "tabular-nums" }}>{run.jobsFetched}</TableCell>
-                    <TableCell sx={{ fontVariantNumeric: "tabular-nums" }}>{run.jobsAfterDedupe}</TableCell>
-                    <TableCell sx={{ fontVariantNumeric: "tabular-nums" }}>{run.jobsAfterFilters}</TableCell>
-                    <TableCell sx={{ fontVariantNumeric: "tabular-nums", fontWeight: 800 }}>{run.jobsSaved}</TableCell>
+                    <TableCell sx={{ fontVariantNumeric: "tabular-nums" }}>
+                      <RunCountLink runId={run.id} value={run.jobsFetched} stage="fetched" />
+                    </TableCell>
+                    <TableCell sx={{ fontVariantNumeric: "tabular-nums" }}>
+                      <RunCountLink runId={run.id} value={run.jobsAfterDedupe} stage="new" />
+                    </TableCell>
+                    <TableCell sx={{ fontVariantNumeric: "tabular-nums" }}>
+                      <RunCountLink runId={run.id} value={run.jobsAfterFilters} stage="matched" />
+                    </TableCell>
+                    <TableCell sx={{ fontVariantNumeric: "tabular-nums", fontWeight: 800 }}>
+                      <RunCountLink runId={run.id} value={run.jobsSaved} stage="saved" bold />
+                    </TableCell>
                     <TableCell>{latestDiagnostics(run.progress)}</TableCell>
                     <TableCell>{latestProgress(run.progress)}</TableCell>
                   </TableRow>
@@ -106,6 +116,25 @@ export default async function RunsPage() {
         </TableContainer>
       </Stack>
     </AppShell>
+  );
+}
+
+function RunCountLink({
+  runId,
+  value,
+  stage,
+  bold = false,
+}: {
+  runId: string;
+  value: number;
+  stage: "fetched" | "new" | "matched" | "saved";
+  bold?: boolean;
+}) {
+  if (value <= 0) return <>{value}</>;
+  return (
+    <Link href={searchRunStagePath(runId, stage)} style={{ color: "inherit", fontWeight: bold ? 800 : undefined }}>
+      {value}
+    </Link>
   );
 }
 

@@ -17,7 +17,7 @@ describe("company research agent", () => {
         atsProvider: "greenhouse",
         rawData: { companySource: true },
         description: "Build React TypeScript dashboards for authentication, passkeys, security admin workflows, and cross-functional product teams.",
-        source: { name: "Company Source List", type: "company_site", config: {} } as JobSource,
+        source: { name: "Company watchlist", type: "company_site", config: {} } as JobSource,
         evaluations: [
           {
             strengths: ["React", "WebAuthn"],
@@ -32,7 +32,7 @@ describe("company research agent", () => {
     expect(output.brief).toContain("IdentityCo");
     expect(output.roleThemes).toEqual(expect.arrayContaining(["React/frontend product UI", "security and identity workflows"]));
     expect(output.positioningAngles).toContain("Lead with the Security SaaS / Identity resume variant.");
-    expect(output.sourceNotes).toContain("Found through the curated company source list.");
+    expect(output.sourceNotes).toContain("Found through the company watchlist.");
     expect(output.risks).toContain("Salary range is unknown.");
   });
 });

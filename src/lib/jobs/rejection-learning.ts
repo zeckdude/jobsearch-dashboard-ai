@@ -4,16 +4,38 @@ import { prisma } from "@/lib/prisma";
 export const rejectionReasonCodes = [
   "wrong_seniority",
   "wrong_tech_stack",
+  "wrong_salary",
+  "wrong_location",
+  "wrong_work_mode",
   "compensation_location",
   "company_industry",
   "weak_fit",
   "already_applied_duplicate",
+  "job_filled",
+  "job_not_found",
   "duplicate_stale",
   "low_quality_posting",
   "not_interested",
 ] as const;
 
 export type RejectionReasonCode = typeof rejectionReasonCodes[number];
+
+export const rejectionReasonLabels: Record<RejectionReasonCode, string> = {
+  wrong_seniority: "Wrong seniority",
+  wrong_tech_stack: "Wrong tech stack",
+  wrong_salary: "Wrong salary",
+  wrong_location: "Wrong location",
+  wrong_work_mode: "Wrong work mode",
+  compensation_location: "Comp/location",
+  company_industry: "Company/industry",
+  weak_fit: "Weak fit",
+  already_applied_duplicate: "Already applied/dupe",
+  job_filled: "Job has been filled",
+  job_not_found: "Job can't be found",
+  duplicate_stale: "Duplicate/stale",
+  low_quality_posting: "Low quality",
+  not_interested: "Not interested",
+};
 
 export type CaptureJobRejectionLearningInput = {
   userId: string;
@@ -145,8 +167,7 @@ async function createFeedbackWithGuidance(input: {
 }
 
 function labelForReason(reason: RejectionReasonCode) {
-  if (reason === "already_applied_duplicate") return "Already applied/duplicate";
-  return reason.replace(/_/g, " ");
+  return rejectionReasonLabels[reason] ?? reason.replace(/_/g, " ");
 }
 
 function toJsonInput(value: unknown): Prisma.InputJsonValue {

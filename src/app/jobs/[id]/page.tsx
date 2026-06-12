@@ -24,10 +24,16 @@ import { notFound } from "next/navigation";
 import { AppShell } from "@/app/app-shell";
 import { ActionButton } from "@/components/action-button";
 import { JobDescription } from "@/components/job-description";
+import { JobDiscoveryChannel } from "@/components/job-discovery-channel";
+import { ProfileLink } from "@/components/profile-link";
+import { JobFavoriteButton } from "@/components/job-favorite-button";
 import { JobRejectButton } from "@/components/job-reject-button";
 import { PageHeader } from "@/components/ui/page-header";
 import { ScoreChip } from "@/components/ui/score-chip";
 import { jsonArray } from "@/lib/json";
+import { formatJobSalaryRange } from "@/lib/job-search/salary-display";
+import { isJobFavorited } from "@/lib/jobs/favorites";
+import { parseDiscoveryMetadata, postingLinkLabel } from "@/lib/jobs/discovery-channel";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -38,13 +44,13 @@ export default async function JobDetailPage({ params }: { params: { id: string }
     include: {
       matches: {
         include: {
-          jobSearchProfile: { select: { name: true, userId: true } },
+          jobSearchProfile: { select: { id: true, name: true, userId: true } },
         },
         orderBy: { overallScore: "desc" },
       },
       evaluations: {
         include: {
-          jobSearchProfile: { select: { name: true } },
+          jobSearchProfile: { select: { id: true, name: true } },
         },
         orderBy: { fitScore: "desc" },
       },
@@ -62,6 +68,8 @@ export default async function JobDetailPage({ params }: { params: { id: string }
 
   if (!job) notFound();
 
+  const user = await prisma.user.findFirst({ orderBy: { createdAt: "asc" }, select: { id: true } });
+  const favorited = user ? await isJobFavorited(user.id, job.id) : false;
   const topMatch = job.matches[0];
   const topEvaluation = job.evaluations[0];
   const readyApplication = job.applications.find((application) => application.resume && application.coverLetter);
@@ -73,6 +81,7 @@ export default async function JobDetailPage({ params }: { params: { id: string }
           eyebrow="Job detail"
           title={job.title}
           description={`${job.company} · ${job.location ?? "Unknown location"} · ${job.remoteType}`}
+          actions={<JobFavoriteButton jobId={job.id} initialFavorited={favorited} size="medium" />}
         />
 
         <Card>
@@ -82,21 +91,38 @@ export default async function JobDetailPage({ params }: { params: { id: string }
                 {topMatch ? <ScoreChip score={topMatch.overallScore} label={`${topMatch.overallScore} match`} /> : null}
                 {topEvaluation ? <ScoreChip score={topEvaluation.opportunityScore} label={`${topEvaluation.opportunityScore} opportunity`} /> : null}
                 {topEvaluation ? <ScoreChip score={topEvaluation.confidenceScore} label={`${topEvaluation.confidenceScore} confidence`} /> : null}
-                {topMatch ? <Chip variant="outlined" label={topMatch.jobSearchProfile.name} /> : null}
+                {topMatch ? <ProfileLink profileId={topMatch.jobSearchProfile.id} name={topMatch.jobSearchProfile.name} variant="chip" /> : null}
                 {topEvaluation ? <Chip variant="outlined" label={formatAction(topEvaluation.recommendedAction)} /> : null}
                 {topEvaluation?.recommendedResumeProfile ? <Chip variant="outlined" label={topEvaluation.recommendedResumeProfile} /> : null}
-                {job.source ? <Chip variant="outlined" label={job.source.name} /> : null}
                 {job.duplicateGroupId ? <Chip color="warning" variant="outlined" label="Duplicate group" /> : null}
                 {job.staleScore >= 45 ? <Chip color="warning" variant="outlined" label={`Stale ${job.staleScore}`} /> : null}
-                {job.applicationUrl ? <Chip variant="outlined" label="Application URL saved" /> : null}
               </Stack>
+
+              <JobDiscoveryChannel
+                source={job.source ? { name: job.source.name, type: job.source.type } : null}
+                applicationUrl={job.applicationUrl}
+                discoveryMetadata={topMatch ? parseDiscoveryMetadata(topMatch.discoveryMetadata) : null}
+                profileId={topMatch?.jobSearchProfile.id}
+                profileName={topMatch?.jobSearchProfile.name}
+                allMatchingProfiles={job.matches.map((match) => ({
+                  id: match.jobSearchProfile.id,
+                  name: match.jobSearchProfile.name,
+                  score: match.overallScore,
+                  matchTier: match.matchTier,
+                  status: match.status,
+                }))}
+              />
 
               {topMatch ? (
                 <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(4, 1fr)" }, gap: 2 }}>
                   <Score label="Title" value={topMatch.titleFit} />
                   <Score label="Skills" value={topMatch.skillFit} />
                   <Score label="Remote" value={topMatch.remoteFit} />
-                  <Score label="Comp" value={topMatch.compensationFit} />
+                  <Score
+                    label="Compensation"
+                    value={topMatch.compensationFit}
+                    detail={formatJobSalaryRange(job.salaryMin, job.salaryMax, job.salaryCurrency)}
+                  />
                 </Box>
               ) : null}
 
@@ -187,7 +213,11 @@ export default async function JobDetailPage({ params }: { params: { id: string }
                     Regenerate
                   </ActionButton>
                   <ActionButton href="/resumes/generated" variant="outlined" startIcon={<RuleOutlinedIcon />}>Rationale</ActionButton>
-                  {job.applicationUrl ? <ActionButton href={job.applicationUrl} variant="outlined" startIcon={<OpenInNewIcon />}>Open application</ActionButton> : null}
+                  {job.applicationUrl ? (
+                    <ActionButton href={job.applicationUrl} variant="outlined" startIcon={<OpenInNewIcon />} target="_blank">
+                      {postingLinkLabel(job.applicationUrl)}
+                    </ActionButton>
+                  ) : null}
                   {readyApplication ? (
                     <ActionButton
                       postTo={`/api/applications/${readyApplication.id}/launch-assistant`}
@@ -271,11 +301,16 @@ export default async function JobDetailPage({ params }: { params: { id: string }
   );
 }
 
-function Score({ label, value }: { label: string; value: number }) {
+function Score({ label, value, detail }: { label: string; value: number; detail?: string }) {
   return (
     <Box sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.5, bgcolor: "#fafcfd" }}>
       <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800 }}>{label}</Typography>
       <Typography variant="h2" sx={{ fontVariantNumeric: "tabular-nums" }}>{value}</Typography>
+      {detail ? (
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, lineHeight: 1.35 }}>
+          {detail}
+        </Typography>
+      ) : null}
     </Box>
   );
 }

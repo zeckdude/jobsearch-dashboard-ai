@@ -1,6 +1,7 @@
 import type { JobSearchProfile, JobSource, SearchProfilePerformance } from "@prisma/client";
 import { runAgent } from "@/lib/agents/run-agent";
 import { defaultCompanySourceConfig, normalizeCompanySourceConfig } from "@/lib/job-search/company-source-config";
+import { CANONICAL_SOURCE_NAMES } from "@/lib/job-search/source-display";
 import type { CompanySource } from "@/lib/job-search/company-sources";
 import { jsonArray } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
@@ -114,7 +115,7 @@ export async function runSearchExpansionAgent(input: SearchExpansionInput = {}) 
           orderBy: [{ enabled: "desc" }, { name: "asc" }],
         }),
         prisma.jobSource.findUnique({
-          where: { type_name: { type: "company_site", name: "Company Source List" } },
+          where: { type_name: { type: "company_site", name: CANONICAL_SOURCE_NAMES.companySite } },
         }),
       ]);
 

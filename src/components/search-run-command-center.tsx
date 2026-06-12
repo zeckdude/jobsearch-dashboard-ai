@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
+import StopIcon from "@mui/icons-material/Stop";
 import ReplayOutlinedIcon from "@mui/icons-material/ReplayOutlined";
 import BuildCircleOutlinedIcon from "@mui/icons-material/BuildCircleOutlined";
 import Alert from "@mui/material/Alert";
@@ -14,7 +15,10 @@ import LinearProgress from "@mui/material/LinearProgress";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { useEffect, useMemo, useState } from "react";
+import { buildSearchRunRequestBody, SearchRunOptionsFields } from "@/components/search-run-options-fields";
+import { SearchRunStat } from "@/components/search-run-stat";
 import { StatusChip } from "@/components/ui/status-chip";
+import { useSearchRunOptions } from "@/components/use-search-run-options";
 
 type ProgressEvent = {
   at: string;
@@ -85,6 +89,8 @@ export function SearchRunCommandCenter({ initialRun }: { initialRun: SearchRun |
   const [run, setRun] = useState<SearchRun | null>(initialRun);
   const [agencyRun, setAgencyRun] = useState<AgencyRunStatus | null>(null);
   const [error, setError] = useState("");
+  const [stopping, setStopping] = useState(false);
+  const { sources, profiles, companySourceCatalog, options, setOptions, loading: optionsLoading, error: optionsError, reload: reloadOptions } = useSearchRunOptions();
   const running = run?.status === "running";
   const latest = run?.progress?.[run.progress.length - 1] ?? null;
   const timeline = useMemo(() => run?.progress?.slice(-10).reverse() ?? [], [run?.progress]);
@@ -105,13 +111,32 @@ export function SearchRunCommandCenter({ initialRun }: { initialRun: SearchRun |
 
   async function startRun() {
     setError("");
-    const response = await fetch("/api/jobs/search/run", { method: "POST" });
+    const response = await fetch("/api/jobs/search/run", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(buildSearchRunRequestBody(options, sources, profiles)),
+    });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
       setError(body.error ?? "Unable to start search.");
       return;
     }
     setRun(normalizeRun(body.run));
+  }
+
+  async function stopRun() {
+    setStopping(true);
+    setError("");
+    const response = await fetch("/api/jobs/search/run", { method: "DELETE" });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setError(body.error ?? "Unable to stop search.");
+      setStopping(false);
+      return;
+    }
+    setRun(normalizeRun(body.run));
+    setStopping(false);
+    refresh();
   }
 
   useEffect(() => {
@@ -178,19 +203,47 @@ export function SearchRunCommandCenter({ initialRun }: { initialRun: SearchRun |
                 {latest?.message ?? "Start discovery to fetch, dedupe, score, save jobs, and hand strong matches to the recruiting agency."}
               </Typography>
             </Box>
-            <Button variant="contained" startIcon={<PlayArrowIcon />} disabled={running} onClick={startRun}>
-              {running ? "Running..." : "Run search"}
-            </Button>
+            <Stack direction="row" spacing={1}>
+              {running ? (
+                <Button
+                  variant="outlined"
+                  color="error"
+                  startIcon={<StopIcon />}
+                  disabled={stopping}
+                  onClick={() => void stopRun()}
+                >
+                  {stopping ? "Stopping…" : "Stop search"}
+                </Button>
+              ) : null}
+              <Button variant="contained" startIcon={<PlayArrowIcon />} disabled={running} onClick={startRun}>
+                {running ? "Running..." : "Run search"}
+              </Button>
+            </Stack>
           </Stack>
+
+          {optionsError ? <Alert severity="warning">{optionsError}</Alert> : null}
+          {!optionsLoading && sources.length ? (
+            <Box sx={{ border: 1, borderColor: "divider", borderRadius: 2, p: 2 }}>
+              <SearchRunOptionsFields
+                sources={sources}
+                profiles={profiles}
+                companySourceCatalog={companySourceCatalog}
+                value={options}
+                onChange={setOptions}
+                collapsed
+                onSourcesChanged={() => void reloadOptions()}
+              />
+            </Box>
+          ) : null}
 
           {error ? <Alert severity="error">{error}</Alert> : null}
           {running ? <LinearProgress /> : null}
 
           <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, 1fr)", md: "repeat(4, 1fr)" }, gap: 1 }}>
-            <RunStat label="Fetched" value={run?.jobsFetched ?? 0} helper="From sources" />
-            <RunStat label="New" value={run?.jobsAfterDedupe ?? 0} helper="After dedupe" />
-            <RunStat label="Matched" value={run?.jobsAfterFilters ?? 0} helper="Passed filters" />
-            <RunStat label="Saved" value={run?.jobsSaved ?? 0} helper="Sent to agency" />
+            <SearchRunStat runId={run?.id} label="Fetched" value={run?.jobsFetched ?? 0} helper="From sources" />
+            <SearchRunStat runId={run?.id} label="New" value={run?.jobsAfterDedupe ?? 0} helper="After dedupe" />
+            <SearchRunStat runId={run?.id} label="Matched" value={run?.jobsAfterFilters ?? 0} helper="Passed filters" />
+            <SearchRunStat runId={run?.id} label="Saved" value={run?.jobsSaved ?? 0} helper="New in queue" />
           </Box>
 
           {agencyHandoff ? (
@@ -237,16 +290,6 @@ export function SearchRunCommandCenter({ initialRun }: { initialRun: SearchRun |
         </Stack>
       </CardContent>
     </Card>
-  );
-}
-
-function RunStat({ label, value, helper }: { label: string; value: number; helper: string }) {
-  return (
-    <Box sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.25, bgcolor: "background.paper" }}>
-      <Typography variant="caption" color="text.secondary">{label}</Typography>
-      <Typography sx={{ fontSize: 24, fontWeight: 900, fontVariantNumeric: "tabular-nums", lineHeight: 1.15 }}>{value}</Typography>
-      <Typography variant="caption" color="text.secondary">{helper}</Typography>
-    </Box>
   );
 }
 

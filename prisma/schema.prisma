@@ -72,6 +72,11 @@ enum AtsProvider {
   unknown
 }
 
+enum MatchTier {
+  full
+  partial
+}
+
 enum JobMatchStatus {
   discovered
   needs_review
@@ -130,11 +135,19 @@ enum SearchRunStatus {
   completed
   failed
   partial
+  cancelled
 }
 
 enum SearchRunTrigger {
   cron
   manual
+}
+
+enum JobSearchRunItemStage {
+  fetched
+  new
+  matched
+  saved
 }
 
 enum ApplicationEventType {
@@ -453,6 +466,8 @@ model User {
   skillFeedback         SkillFeedback[]
   thankYouDrafts        ThankYouDraft[]
   jobSuppressions       JobSuppression[]
+  jobFavorites          JobFavorite[]
+  jobSearchPreferences  JobSearchPreferences?
   workflowSessions      DailyWorkflowSession[]
 }
 
@@ -678,6 +693,7 @@ model JobSearchProfile {
   keywordsExcluded         Json                       @default("[]")
   minimumMatchScore        Int                        @default(75)
   maxResultsPerRun         Int                        @default(50)
+  remotePreferences        Json                       @default("[]")
   scheduleEnabled          Boolean                    @default(true)
   cronExpression           String?
   emailDigestEnabled       Boolean                    @default(true)
@@ -687,6 +703,7 @@ model JobSearchProfile {
   updatedAt                DateTime                   @updatedAt
   evaluations              JobEvaluation[]
   matches                  JobProfileMatch[]
+  discoveredMatches        JobProfileMatch[]          @relation("DiscoveredMatches")
   performanceSnapshots     SearchProfilePerformance[]
   user                     User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -794,6 +811,8 @@ model JobPosting {
   skillFeedback       SkillFeedback[]
   suppressions         JobSuppression[]
   thankYouDrafts      ThankYouDraft[]
+  favorites           JobFavorite[]
+  searchRunItems      JobSearchRunItem[]
   source             JobSource?             @relation(fields: [sourceId], references: [id], onDelete: SetNull)
 
   @@index([company, title])
@@ -804,35 +823,42 @@ model JobPosting {
 }
 
 model JobProfileMatch {
-  id                 String                 @id @default(cuid())
-  jobPostingId       String
-  jobSearchProfileId String
-  status             JobMatchStatus         @default(discovered)
-  overallScore       Int
-  titleFit           Int
-  skillFit           Int
-  seniorityFit       Int
-  industryFit        Int
-  compensationFit    Int
-  remoteFit          Int
-  relocationFit      Int
-  strongestMatches   Json                   @default("[]")
-  concerns           Json                   @default("[]")
-  missingKeywords    Json                   @default("[]")
-  recommendedAction  String
-  aiExplanation      String
-  reviewedAt         DateTime?
-  createdAt          DateTime               @default(now())
-  updatedAt          DateTime               @updatedAt
-  applications       Application[]
-  coverLetters       GeneratedCoverLetter[]
-  suppressions        JobSuppression[]
-  jobPosting         JobPosting             @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
-  jobSearchProfile   JobSearchProfile       @relation(fields: [jobSearchProfileId], references: [id], onDelete: Cascade)
-  resumes            GeneratedResume[]
+  id                    String                 @id @default(cuid())
+  jobPostingId          String
+  jobSearchProfileId    String
+  discoveredByProfileId String?
+  status                JobMatchStatus         @default(discovered)
+  matchTier             MatchTier              @default(full)
+  overallScore          Int
+  titleFit              Int
+  skillFit              Int
+  seniorityFit          Int
+  industryFit           Int
+  compensationFit       Int
+  remoteFit             Int
+  relocationFit         Int
+  strongestMatches      Json                   @default("[]")
+  concerns              Json                   @default("[]")
+  missingKeywords       Json                   @default("[]")
+  failedRequirements    Json                   @default("[]")
+  passedRequirements    Json                   @default("[]")
+  discoveryMetadata     Json                   @default("{}")
+  recommendedAction     String
+  aiExplanation         String
+  reviewedAt            DateTime?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  applications          Application[]
+  coverLetters          GeneratedCoverLetter[]
+  suppressions          JobSuppression[]
+  jobPosting            JobPosting             @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
+  jobSearchProfile      JobSearchProfile       @relation(fields: [jobSearchProfileId], references: [id], onDelete: Cascade)
+  discoveredByProfile   JobSearchProfile?      @relation("DiscoveredMatches", fields: [discoveredByProfileId], references: [id], onDelete: SetNull)
+  resumes               GeneratedResume[]
 
   @@unique([jobPostingId, jobSearchProfileId])
   @@index([status, overallScore])
+  @@index([matchTier, status])
 }
 
 model JobEvaluation {
@@ -857,6 +883,18 @@ model JobEvaluation {
   @@unique([jobPostingId, jobSearchProfileId])
   @@index([recommendedAction, fitScore])
   @@index([jobSearchProfileId, opportunityScore])
+}
+
+model JobFavorite {
+  id           String     @id @default(cuid())
+  userId       String
+  jobPostingId String
+  createdAt    DateTime   @default(now())
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobPosting   JobPosting @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, jobPostingId])
+  @@index([userId, createdAt])
 }
 
 model Application {
@@ -1085,6 +1123,7 @@ model JobSearchRun {
   status           SearchRunStatus  @default(running)
   triggeredBy      SearchRunTrigger @default(manual)
   profileIds       Json             @default("[]")
+  runOptions       Json             @default("{}")
   jobsFetched      Int              @default(0)
   jobsAfterDedupe  Int              @default(0)
   jobsAfterFilters Int              @default(0)
@@ -1092,6 +1131,46 @@ model JobSearchRun {
   progress         Json             @default("[]")
   errors           Json             @default("[]")
   createdAt        DateTime         @default(now())
+  items            JobSearchRunItem[]
+}
+
+model JobSearchPreferences {
+  id                        String    @id @default(cuid())
+  userId                    String    @unique
+  maxPostedAgeDays          Int?      @default(14)
+  postedAfter               DateTime?
+  postedBefore              DateTime?
+  includeUnknownPostedDates Boolean   @default(true)
+  defaultSourceIds          Json      @default("[]")
+  defaultProfileIds         Json      @default("[]")
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+  user                      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model JobSearchRunItem {
+  id             String                @id @default(cuid())
+  runId          String
+  stage          JobSearchRunItemStage
+  title          String
+  company        String
+  location       String?
+  applicationUrl String?
+  sourceName     String?
+  profileId      String?
+  profileName    String?
+  overallScore   Int?
+  matchTier      String?
+  jobPostingId   String?
+  listedAt       DateTime?
+  createdAt      DateTime              @default(now())
+  run            JobSearchRun          @relation(fields: [runId], references: [id], onDelete: Cascade)
+  jobPosting     JobPosting?           @relation(fields: [jobPostingId], references: [id], onDelete: SetNull)
+
+  @@index([runId, stage])
+  @@index([runId, stage, createdAt])
+  @@index([runId, stage, listedAt])
+  @@index([jobPostingId])
 }
 
 model AgentRun {

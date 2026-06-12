@@ -4,8 +4,13 @@ export type CompanySource = {
   priority: 1 | 2 | 3;
   searchTerms: string[];
   careersQuery: string;
+  enabled?: boolean;
   atsSlugs?: Partial<Record<"greenhouse" | "lever" | "ashby", string[]>>;
 };
+
+export function isCompanySourceEnabled(company: Pick<CompanySource, "enabled">) {
+  return company.enabled !== false;
+}
 
 const defaultSearchTerms = [
   "Senior Frontend Engineer",
@@ -835,6 +840,7 @@ export function createCompanySource(input: {
     priority: input.priority,
     searchTerms: termsFor(categories),
     careersQuery: `${input.name} careers senior frontend engineer React TypeScript`,
+    enabled: true,
     atsSlugs: input.atsSlugs && Object.keys(input.atsSlugs).length ? input.atsSlugs : generatedAtsSlugs(input.name),
   };
 }

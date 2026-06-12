@@ -1,10 +1,20 @@
 import { Prisma, type JobSearchRun } from "@prisma/client";
 import { runJobSearch } from "@/lib/job-search/ingest";
+import { loadCompanySourceRunDefaults } from "@/lib/job-search/company-source-run-settings";
+import {
+  loadJobSearchPreferences,
+  resolveRunOptions,
+  serializeRunOptions,
+  type SearchRunOptionsInput,
+} from "@/lib/job-search/run-options";
 import { prisma } from "@/lib/prisma";
 
 const staleRunMs = 20 * 60 * 1000;
 
-export async function startJobSearchRun(triggeredBy: "manual" | "cron", options: { scheduleEnabledOnly?: boolean } = {}) {
+export async function startJobSearchRun(
+  triggeredBy: "manual" | "cron",
+  options: { scheduleEnabledOnly?: boolean; runOptions?: SearchRunOptionsInput; userId?: string | null } = {},
+) {
   const activeRun = await prisma.jobSearchRun.findFirst({
     where: { status: "running" },
     orderBy: { createdAt: "desc" },
@@ -18,10 +28,26 @@ export async function startJobSearchRun(triggeredBy: "manual" | "cron", options:
     }
   }
 
+  const user = options.userId
+    ? await prisma.user.findUnique({ where: { id: options.userId }, select: { id: true } })
+    : await prisma.user.findFirst({ orderBy: { createdAt: "asc" }, select: { id: true } });
+
+  const [preferences, companySourceDefaults] = await Promise.all([
+    loadJobSearchPreferences(user?.id),
+    loadCompanySourceRunDefaults(),
+  ]);
+  const resolved = resolveRunOptions(
+    preferences,
+    triggeredBy === "manual" ? options.runOptions : null,
+    companySourceDefaults,
+  );
+  const serializedOptions = serializeRunOptions(resolved);
+
   const profiles = await prisma.jobSearchProfile.findMany({
     where: {
       enabled: true,
       ...(options.scheduleEnabledOnly ? { scheduleEnabled: true } : {}),
+      ...(resolved.profileIds.length ? { id: { in: resolved.profileIds } } : {}),
     },
     select: { id: true },
   });
@@ -31,6 +57,7 @@ export async function startJobSearchRun(triggeredBy: "manual" | "cron", options:
       status: "running",
       triggeredBy,
       profileIds: profiles.map((profile) => profile.id),
+      runOptions: serializedOptions as Prisma.InputJsonValue,
       progress: [{ at: new Date().toISOString(), message: triggeredBy === "cron" ? "Scheduled search queued." : "Search queued." }],
     },
   });

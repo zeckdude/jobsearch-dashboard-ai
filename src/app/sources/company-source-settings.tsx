@@ -100,7 +100,7 @@ export function CompanySourceSettings(props: CompanySourceSettingsProps) {
       </Box>
       <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ justifyContent: "space-between", alignItems: { sm: "center" } }}>
         <Typography variant="body2" color="text.secondary">
-          This controls how aggressively searches probe direct ATS feeds. Higher limits are broader but slower.
+          Default limits for every job search run. You can override these per run in the dashboard search options before starting a search.
         </Typography>
         <Stack direction="row" spacing={1}>
           <Button disabled={saving} variant="outlined" startIcon={<RestartAltOutlinedIcon />} onClick={() => void save(true)}>

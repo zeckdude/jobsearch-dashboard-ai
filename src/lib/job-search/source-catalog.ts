@@ -37,7 +37,7 @@ export const sourceCatalog: SourceCatalogItem[] = [
   source("Greenhouse", "ats_platform", 1, "active", "direct_ats", global, seniorEngineeringRoles, true, false, "low", "daily", "Direct API-backed ATS adapter is active."),
   source("Lever", "ats_platform", 1, "active", "direct_ats", global, seniorEngineeringRoles, true, false, "low", "daily", "Direct API-backed ATS adapter is active."),
   source("Ashby", "ats_platform", 1, "active", "direct_ats", global, seniorEngineeringRoles, true, false, "low", "daily", "Direct API-backed ATS adapter is active."),
-  source("Company Source List", "company_careers_page", 1, "active", "company_source", global, seniorEngineeringRoles, true, false, "medium", "daily", "Curated company list probes Greenhouse, Lever, and Ashby slugs directly."),
+  source("Company watchlist", "company_careers_page", 1, "active", "company_source", global, seniorEngineeringRoles, true, false, "medium", "daily", "Curated company list probes Greenhouse, Lever, and Ashby slugs directly."),
   source("Workday", "ats_platform", 1, "active", "search_query", global, seniorEngineeringRoles, true, false, "high", "daily", "Covered through Brave Search query templates while tenant-specific URLs and anti-automation are handled conservatively."),
   source("SmartRecruiters", "ats_platform", 1, "active", "search_query", global, seniorEngineeringRoles, true, false, "medium", "daily", "Covered through Brave Search query templates until a dedicated API connector is added."),
   source("iCIMS", "ats_platform", 2, "active", "search_query", ["US", "Europe"], seniorEngineeringRoles, true, false, "high", "daily", "Covered through Brave Search query templates for inconsistent enterprise career-page formats."),

@@ -231,7 +231,8 @@ function normalizeContextPath(contextPath: string) {
 function titleFromPath(contextPath: string) {
   if (contextPath === GLOBAL_JOLENE_CONTEXT_PATH) return "Jolene";
   if (contextPath === "/" || contextPath === "/dashboard") return "Command Center";
-  if (contextPath === "/jobs") return "Jobs";
+  if (contextPath === "/jobs") return "Review Matches";
+  if (contextPath === "/jobs/favorites") return "Job Favorites";
   if (contextPath.startsWith("/jobs/")) return "Job detail";
   if (contextPath === "/applications/assistant") return "Apply Sprint";
   if (contextPath.startsWith("/applications/")) return "Application detail";

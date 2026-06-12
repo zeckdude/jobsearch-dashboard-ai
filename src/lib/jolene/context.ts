@@ -25,6 +25,8 @@ export async function buildJolenePageContext(contextPath: string): Promise<Jolen
   if (pathname.startsWith("/applications/")) return buildApplicationContext(pathname);
   if (pathname === "/needs-me") return buildNeedsMeContext(pathname);
   if (pathname === "/settings") return buildSettingsContext(pathname);
+  if (pathname === "/profiles") return buildProfilesListContext(pathname);
+  if (pathname.startsWith("/profiles/")) return buildProfileDetailContext(pathname);
 
   return {
     routeType: "general",
@@ -392,6 +394,105 @@ async function buildNeedsMeContext(contextPath: string): Promise<JolenePageConte
     },
     suggestedActions: [
       { label: "Open Apply Sprint", href: "/applications/assistant", description: "Continue work after blockers are resolved." },
+    ],
+  };
+}
+
+async function buildProfilesListContext(contextPath: string): Promise<JolenePageContext> {
+  const profiles = await prisma.jobSearchProfile.findMany({
+    select: {
+      id: true,
+      name: true,
+      enabled: true,
+      minimumMatchScore: true,
+      titles: true,
+      countries: true,
+      performanceSnapshots: { orderBy: { lastEvaluatedAt: "desc" }, take: 1, select: { healthScore: true, callbackRate: true } },
+    },
+    orderBy: [{ enabled: "desc" }, { name: "asc" }],
+    take: 30,
+  });
+
+  return {
+    routeType: "profiles_list",
+    contextPath,
+    summary: "Search Profiles page for managing discovery campaigns, targeting criteria, and strategy tools.",
+    data: {
+      profileCount: profiles.length,
+      enabledCount: profiles.filter((profile) => profile.enabled).length,
+      profiles: profiles.map((profile) => ({
+        id: profile.id,
+        name: profile.name,
+        enabled: profile.enabled,
+        minimumMatchScore: profile.minimumMatchScore,
+        healthScore: profile.performanceSnapshots[0]?.healthScore ?? null,
+        callbackRate: profile.performanceSnapshots[0]?.callbackRate ?? null,
+      })),
+    },
+    suggestedActions: [
+      { label: "Open Command Center", href: "/dashboard", description: "Run discovery and review new matches." },
+      { label: "Review job queue", href: "/jobs", description: "Approve or reject jobs surfaced by these profiles." },
+    ],
+  };
+}
+
+async function buildProfileDetailContext(contextPath: string): Promise<JolenePageContext> {
+  const segments = contextPath.split("/").filter(Boolean);
+  const profileId = segments[1];
+  const isEdit = segments[2] === "edit";
+
+  const profile = profileId
+    ? await prisma.jobSearchProfile.findUnique({
+        where: { id: profileId },
+        include: {
+          performanceSnapshots: { orderBy: { lastEvaluatedAt: "desc" }, take: 1 },
+          _count: { select: { matches: true } },
+        },
+      })
+    : null;
+
+  if (!profile) {
+    return {
+      routeType: isEdit ? "profile_edit" : "profile_detail",
+      contextPath,
+      summary: "Search profile page, but this profile was not found.",
+      data: { profileId },
+      suggestedActions: [{ label: "Back to profiles", href: "/profiles", description: "Return to the search profiles list." }],
+    };
+  }
+
+  const performance = profile.performanceSnapshots[0] ?? null;
+
+  return {
+    routeType: isEdit ? "profile_edit" : "profile_detail",
+    contextPath,
+    summary: isEdit
+      ? `Editing search profile "${profile.name}". Jolene can explain what each targeting field affects.`
+      : `Search profile "${profile.name}". Jolene can explain performance, queue state, and what to tune next.`,
+    data: {
+      profile: {
+        id: profile.id,
+        name: profile.name,
+        enabled: profile.enabled,
+        searchIntent: profile.searchIntent,
+        minimumMatchScore: profile.minimumMatchScore,
+        maxResultsPerRun: profile.maxResultsPerRun,
+        matchCount: profile._count.matches,
+      },
+      performance: performance
+        ? {
+            healthScore: performance.healthScore,
+            callbackRate: performance.callbackRate,
+            jobsFound: performance.jobsFound,
+            jobsApproved: performance.jobsApproved,
+            jobsRejected: performance.jobsRejected,
+          }
+        : null,
+    },
+    suggestedActions: [
+      { label: "View review queue", href: `/jobs?profile=${profile.id}`, description: "See jobs matched by this profile." },
+      { label: isEdit ? "Back to profile detail" : "Edit profile", href: isEdit ? `/profiles/${profile.id}` : `/profiles/${profile.id}/edit`, description: isEdit ? "Return to the read-only profile overview." : "Change targeting titles, filters, and thresholds." },
+      { label: "Open strategy tools", href: "/profiles#strategy-tools", description: "Run optimizer, expansion, or market intelligence." },
     ],
   };
 }

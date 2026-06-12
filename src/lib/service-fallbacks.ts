@@ -4,7 +4,7 @@ const FALLBACK_DEFS: Record<string, string> = {
   openai:
     "AI features are in fallback mode — job scores use keyword matching, resume tailoring uses templates, and Jolene gives generic answers instead of reading your profile.",
   brave:
-    "The Search Query Backlog source has no provider — jobs from Workday, Wellfound, YC, and 100+ platforms are not being searched.",
+    "Web search has no provider — jobs from Workday, Wellfound, YC, and 100+ platforms are not being searched.",
   email_sync:
     "No email inbox is connected — application outcomes won't update automatically when recruiter replies or rejections arrive.",
   playwright:

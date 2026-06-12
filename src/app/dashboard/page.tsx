@@ -15,17 +15,21 @@ import Typography from "@mui/material/Typography";
 import { AppShell } from "@/app/app-shell";
 import { ActionButton } from "@/components/action-button";
 import { AgencyRunControl } from "@/components/agency-run-control";
+import { JobFavoriteButton } from "@/components/job-favorite-button";
 import { JobRejectButton } from "@/components/job-reject-button";
+import { ListingMaintenancePanel } from "@/components/listing-maintenance-panel";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { SearchRunCommandCenter } from "@/components/search-run-command-center";
 import { ScoreChip } from "@/components/ui/score-chip";
+import { ProfileLink } from "@/components/profile-link";
 import { formatStatus } from "@/components/ui/status-chip";
 import { agentUserRequestHref, agentUserRequestTypeLabel, listOpenAgentUserRequests } from "@/lib/agent-user-requests";
 import { auditApplicationIntegrity } from "@/lib/applications/integrity";
 import { applicationJobKeySet, hasApplicationForJob, submittedApplicationStatuses } from "@/lib/applications/job-filters";
 import { jsonArray } from "@/lib/json";
 import { uniqueMatchesByCanonicalJob } from "@/lib/job-search/unique-matches";
+import { loadFavoritedJobIds } from "@/lib/jobs/favorites";
 import { isJobSuppressed, loadJobSuppressionStatesByUserIds } from "@/lib/jobs/suppression";
 import { prisma } from "@/lib/prisma";
 import { getServiceFallbacks } from "@/lib/service-fallbacks";
@@ -71,7 +75,7 @@ export default async function DashboardPage() {
       },
       include: {
         jobPosting: true,
-        jobSearchProfile: { select: { name: true, userId: true } },
+        jobSearchProfile: { select: { id: true, name: true, userId: true } },
       },
       orderBy: [{ overallScore: "desc" }, { createdAt: "desc" }],
       take: 50,
@@ -107,8 +111,9 @@ export default async function DashboardPage() {
     }),
     listOpenAgentUserRequests(5),
     auditApplicationIntegrity().catch(() => null),
-    prisma.user.findFirst({ select: { notificationSettings: true } }),
+    prisma.user.findFirst({ orderBy: { createdAt: "asc" }, select: { id: true, notificationSettings: true } }),
   ]);
+  const favoritedJobIds = notificationSettings?.id ? await loadFavoritedJobIds(notificationSettings.id) : new Set<string>();
   const suppressionStates = await loadJobSuppressionStatesByUserIds([
     ...needsReview.map((match) => match.jobSearchProfile.userId),
     ...agencyCandidateMatches.map((match) => match.jobSearchProfile.userId),
@@ -143,7 +148,7 @@ export default async function DashboardPage() {
     latestRunStartedAt: latestRun?.startedAt ?? null,
   });
 
-  const ns = notificationSettings as { pushoverEnabled?: boolean; emailEnabled?: boolean } | null;
+  const ns = notificationSettings?.notificationSettings as { pushoverEnabled?: boolean; emailEnabled?: boolean } | null;
   const anyNotificationConfigured = Boolean(ns?.pushoverEnabled || ns?.emailEnabled);
   const fallbacks = getServiceFallbacks(["openai", "brave", "notifications"], {
     anyNotificationConfigured,
@@ -204,6 +209,7 @@ export default async function DashboardPage() {
         <Box data-workflow-target="search-run-section">
           <SearchRunCommandCenter initialRun={latestRun ? serializeSearchRun(latestRun) : null} />
         </Box>
+        <ListingMaintenancePanel />
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: "repeat(4, 1fr)" }, gap: 2 }}>
           <Metric label="Enabled profiles" value={profiles.length.toString()} helper="Active campaigns" />
           <Metric label="Exceptions" value={needsReviewCount.toString()} helper="Needs your decision" />
@@ -246,7 +252,7 @@ export default async function DashboardPage() {
                           <Stack spacing={1} sx={{ minWidth: 0 }}>
                             <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
                               <ScoreChip score={match.overallScore} label={`${match.overallScore} score`} />
-                              <Chip variant="outlined" label={match.jobSearchProfile.name} />
+                              <ProfileLink profileId={match.jobSearchProfile.id} name={match.jobSearchProfile.name} variant="chip" />
                             </Stack>
                             <Box sx={{ minWidth: 0 }}>
                               <Typography variant="h2" sx={{ overflowWrap: "anywhere" }}>{match.jobPosting.title}</Typography>
@@ -254,6 +260,10 @@ export default async function DashboardPage() {
                             </Box>
                           </Stack>
                           <Stack direction="row" spacing={1} sx={{ alignItems: "flex-start", flexShrink: 0 }}>
+                            <JobFavoriteButton
+                              jobId={match.jobPosting.id}
+                              initialFavorited={favoritedJobIds.has(match.jobPosting.id)}
+                            />
                             <JobRejectButton
                               jobId={match.jobPosting.id}
                               matchId={match.id}

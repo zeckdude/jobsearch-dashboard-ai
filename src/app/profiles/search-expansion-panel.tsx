@@ -11,6 +11,7 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { ProfileLink } from "@/components/profile-link";
 import { ScoreChip } from "@/components/ui/score-chip";
 
 export type SearchExpansionPanelOutput = {
@@ -124,7 +125,7 @@ export function SearchExpansionPanel({ latest }: { latest: SearchExpansionPanelO
               <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 900, textTransform: "uppercase" }}>Expansion candidates</Typography>
               {latest.profilesToExpand.map((profile) => (
                 <Box key={profile.profileId} sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.5 }}>
-                  <Typography sx={{ fontWeight: 850 }}>{profile.profileName}</Typography>
+                  <ProfileLink profileId={profile.profileId} name={profile.profileName} />
                   <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>{profile.rationale}</Typography>
                   <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mt: 1 }}>
                     {[...profile.suggestedKeywords, ...profile.suggestedCompanies].slice(0, 10).map((item) => <Chip key={`${profile.profileId}-${item}`} size="small" variant="outlined" label={item} />)}

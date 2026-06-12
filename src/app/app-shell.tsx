@@ -1,49 +1,19 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import AssignmentTurnedInOutlinedIcon from "@mui/icons-material/AssignmentTurnedInOutlined";
 import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
-import BoltOutlinedIcon from "@mui/icons-material/BoltOutlined";
-import ChecklistRtlOutlinedIcon from "@mui/icons-material/ChecklistRtlOutlined";
-import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
-import MarkChatUnreadOutlinedIcon from "@mui/icons-material/MarkChatUnreadOutlined";
-import MenuBookOutlinedIcon from "@mui/icons-material/MenuBookOutlined";
-import PsychologyOutlinedIcon from "@mui/icons-material/PsychologyOutlined";
-import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
-import WorkOutlineOutlinedIcon from "@mui/icons-material/WorkOutlineOutlined";
 import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
 import Container from "@mui/material/Container";
 import Divider from "@mui/material/Divider";
 import Drawer from "@mui/material/Drawer";
-import IconButton from "@mui/material/IconButton";
-import List from "@mui/material/List";
-import ListItemButton from "@mui/material/ListItemButton";
-import ListItemIcon from "@mui/material/ListItemIcon";
-import ListItemText from "@mui/material/ListItemText";
 import Stack from "@mui/material/Stack";
 import Toolbar from "@mui/material/Toolbar";
-import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
+import { DesktopAppNavigation, MobileAppNavigation } from "@/components/app-navigation";
 
 const drawerWidth = 264;
 
-const navItems = [
-  { href: "/dashboard", label: "Command Center", eyebrow: "Home", icon: DashboardOutlinedIcon },
-  { href: "/needs-me", label: "Needs Me", eyebrow: "Agent blockers", icon: MarkChatUnreadOutlinedIcon },
-  { href: "/jobs", label: "Jobs", eyebrow: "Review matches", icon: WorkOutlineOutlinedIcon },
-  { href: "/applications/assistant", label: "Apply Sprint", eyebrow: "Run agent", icon: BoltOutlinedIcon },
-  { href: "/applications/field-learning", label: "Field Learning", eyebrow: "Review autofill", icon: PsychologyOutlinedIcon },
-  { href: "/applications", label: "Applications", eyebrow: "Track outcomes", icon: AssignmentTurnedInOutlinedIcon },
-  { href: "/daily-workflow", label: "Daily Workflow", eyebrow: "Habit tracker", icon: ChecklistRtlOutlinedIcon },
-  { href: "/settings", label: "Settings", eyebrow: "Configure", icon: SettingsOutlinedIcon },
-  { href: "/guide", label: "User Guide", eyebrow: "How to use this", icon: MenuBookOutlinedIcon },
-];
-
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-
   return (
     <Box
       sx={{
@@ -65,10 +35,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             boxSizing: "border-box",
             bgcolor: "#fffdf8",
             backgroundImage: "linear-gradient(180deg, #fffdf8 0%, #f4f0e7 100%)",
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
           },
         }}
       >
-        <Toolbar sx={{ minHeight: 96, px: 3 }}>
+        <Toolbar sx={{ minHeight: 96, px: 3, flexShrink: 0 }}>
           <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
             <Avatar
               variant="rounded"
@@ -91,54 +64,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </Stack>
         </Toolbar>
         <Divider />
-        <List sx={{ p: 1.5 }}>
-          {navItems.map((item) => {
-            const selected = pathname === item.href || pathname.startsWith(`${item.href}/`);
-            const Icon = item.icon;
-
-            return (
-              <ListItemButton
-                key={item.href}
-                component={Link}
-                href={item.href}
-                selected={selected}
-                sx={{
-                  mb: 0.5,
-                  minHeight: 44,
-                  color: selected ? "primary.dark" : "text.secondary",
-                  border: "1px solid transparent",
-                  "&:hover": {
-                    bgcolor: "#eef7f6",
-                    color: "primary.dark",
-                  },
-                  "&.Mui-selected": {
-                    bgcolor: "#e6f5f3",
-                    color: "primary.dark",
-                    borderColor: "#b7ded8",
-                    "&:hover": { bgcolor: "#d9efec" },
-                    "& .MuiListItemIcon-root": { color: "primary.dark" },
-                  },
-                }}
-              >
-                <ListItemIcon sx={{ minWidth: 38, color: selected ? "inherit" : "text.secondary" }}>
-                  <Icon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText
-                  primary={
-                    <Stack spacing={0.1}>
-                      <Typography component="span" sx={{ fontSize: 14, fontWeight: 800, lineHeight: 1.25 }}>
-                        {item.label}
-                      </Typography>
-                      <Typography component="span" variant="caption" color={selected ? "primary.dark" : "text.secondary"} sx={{ lineHeight: 1.2 }}>
-                        {item.eyebrow}
-                      </Typography>
-                    </Stack>
-                  }
-                />
-              </ListItemButton>
-            );
-          })}
-        </List>
+        <Box sx={{ flex: 1, overflowY: "auto" }}>
+          <DesktopAppNavigation />
+        </Box>
       </Drawer>
 
       <Box component="main" sx={{ pl: { lg: `${drawerWidth}px` } }}>
@@ -167,46 +95,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </Stack>
             </Stack>
           </Box>
-          <Box
-            component="nav"
-            aria-label="Mobile navigation"
-            sx={{
-              display: "flex",
-              gap: 0.5,
-              overflowX: "auto",
-              px: 1,
-              pb: 1,
-              scrollbarWidth: "none",
-              "&::-webkit-scrollbar": { display: "none" },
-            }}
-          >
-            {navItems.map((item) => {
-              const selected = pathname === item.href || pathname.startsWith(`${item.href}/`);
-              const Icon = item.icon;
-
-              return (
-                <Tooltip key={item.href} title={`${item.label}: ${item.eyebrow}`}>
-                  <IconButton
-                    component={Link}
-                    href={item.href}
-                    aria-label={item.label}
-                    color={selected ? "primary" : "default"}
-                    sx={{
-                      flex: "0 0 auto",
-                      width: 42,
-                      height: 42,
-                      borderRadius: 2,
-                      border: "1px solid",
-                      borderColor: selected ? "primary.main" : "divider",
-                      bgcolor: selected ? "#e6f5f3" : "transparent",
-                    }}
-                  >
-                    <Icon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-              );
-            })}
-          </Box>
+          <MobileAppNavigation />
         </Box>
         <Container maxWidth="xl" sx={{ py: { xs: 2, md: 4 }, px: { xs: 2, sm: 3 } }}>
           {children}

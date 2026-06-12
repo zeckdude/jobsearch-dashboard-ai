@@ -1,142 +1,222 @@
 import type { JobSearchProfile } from "@prisma/client";
 import { describe, expect, it } from "vitest";
-import { scoreJobForProfile } from "@/lib/job-search/scoring";
+import { evaluateJobAgainstProfile, scoreJobForProfile } from "@/lib/job-search/scoring";
 
-describe("scoreJobForProfile", () => {
-  function seniorFrontendProfile(overrides: Partial<JobSearchProfile> = {}) {
+describe("evaluateJobAgainstProfile", () => {
+  function usRemoteProfile(overrides: Partial<JobSearchProfile> = {}) {
     return {
-      name: "Senior Frontend IC",
-      titles: ["Senior Frontend Engineer", "Senior UI Engineer", "Senior Full Stack Engineer"],
+      name: "US Remote Senior Frontend",
+      titles: ["Senior Frontend Engineer", "Senior Full Stack Engineer", "Senior Software Engineer", "Full-stack"],
       keywordsRequired: [],
-      keywordsPreferred: ["React", "TypeScript", "frontend", "UI", "web", "product UI", "dashboards", "design systems", "accessibility", "API integrations"],
+      keywordsPreferred: ["React", "TypeScript", "frontend", "UI", "web"],
       keywordsExcluded: [],
       excludedCompanies: [],
-      excludedTitles: ["Staff", "Principal", "Lead", "Manager", "Director", "Architect", "Advocate", "DevRel", "Data Engineer", "Backend Engineer", "Solutions", "Transformation"],
+      excludedTitles: ["Staff", "Principal", "Lead", "Manager"],
       industries: [],
       includeUnknownSalary: true,
       minimumMatchScore: 75,
       remotePreference: "remote_us_only",
+      remotePreferences: ["remote_us_only"],
       relocationPreference: "unknown",
       countries: ["United States"],
+      cities: [],
+      salaryMin: 175000,
+      salaryCurrency: "USD",
       ...overrides,
     } as unknown as JobSearchProfile;
   }
 
-  it("scores senior frontend IC roles as strong matches", () => {
-    const profile = seniorFrontendProfile();
+  function lasVegasProfile(overrides: Partial<JobSearchProfile> = {}) {
+    return {
+      name: "Las Vegas Hybrid or On-site roles",
+      titles: ["Senior Frontend Engineer"],
+      keywordsRequired: [],
+      keywordsPreferred: ["React", "TypeScript"],
+      keywordsExcluded: [],
+      excludedCompanies: [],
+      excludedTitles: [],
+      industries: [],
+      includeUnknownSalary: true,
+      minimumMatchScore: 75,
+      remotePreference: "hybrid",
+      remotePreferences: ["hybrid", "onsite_relocation"],
+      relocationPreference: "open_to_relocation",
+      countries: ["United States"],
+      cities: ["Las Vegas"],
+      salaryMin: 175000,
+      salaryCurrency: "USD",
+      ...overrides,
+    } as unknown as JobSearchProfile;
+  }
 
-    const score = scoreJobForProfile({
-      company: "SaaS Co",
-      title: "Senior Frontend Engineer",
-      location: "Remote, United States",
-      description: "Build React and TypeScript product UI, dashboards, design system components, accessibility improvements, and API integrations for SaaS workflows.",
-    }, profile);
-
-    expect(score.overallScore).toBeGreaterThanOrEqual(85);
-    expect(score.concerns).not.toContain("Staff, principal, lead, manager, director, or architect seniority is outside the Senior Frontend IC target.");
+  it("full match: senior frontend remote US with salary", () => {
+    const result = evaluateJobAgainstProfile(
+      {
+        company: "SaaS Co",
+        title: "Senior Frontend Engineer",
+        location: "Remote, United States",
+        remoteType: "remote",
+        description: "Build React and TypeScript product UI for SaaS workflows.",
+        salaryMin: 180000,
+        salaryMax: 220000,
+      },
+      usRemoteProfile(),
+    );
+    expect(result.tier).toBe("full");
+    expect(result.overallScore).toBeGreaterThanOrEqual(85);
   });
 
-  it("penalizes staff, principal, lead, and manager roles even when frontend-adjacent", () => {
-    const profile = seniorFrontendProfile();
-    const titles = [
-      "Staff Engineer - Frontend",
-      "Principal Software Engineer, Frontend Platform",
-      "Lead Frontend Engineer",
-      "Senior Manager, Engineering - Platform Security",
-    ];
-
-    const scores = titles.map((title) => scoreJobForProfile({
-      company: "SaaS Co",
-      title,
-      location: "Remote, United States",
-      description: "React TypeScript frontend UI dashboard and API integrations.",
-    }, profile));
-
-    for (const score of scores) {
-      expect(score.overallScore).toBeLessThan(profile.minimumMatchScore);
-      expect(score.concerns).toContain("Staff, principal, lead, manager, director, or architect seniority is outside the Senior Frontend IC target.");
-    }
+  it("partial: unknown salary on otherwise matching remote US role", () => {
+    const result = evaluateJobAgainstProfile(
+      {
+        company: "SaaS Co",
+        title: "Senior Frontend Engineer",
+        location: "Remote, United States",
+        remoteType: "remote",
+        description: "Build React and TypeScript product UI.",
+      },
+      usRemoteProfile(),
+    );
+    expect(result.tier).toBe("partial");
+    expect(result.failedRequirements.some((f) => f.code === "salary")).toBe(true);
   });
 
-  it("allows staff UI and accessibility roles when the profile explicitly targets staff titles", () => {
-    const profile = seniorFrontendProfile({
-      titles: [
-        "Senior Frontend Engineer",
-        "Staff UI Software Engineer",
-        "Staff Software Engineer, Accessibility",
-      ],
-      excludedTitles: ["Principal", "Lead", "Manager", "Director", "Architect"],
-    });
-
-    const staffUi = scoreJobForProfile({
-      company: "AI Co",
-      title: "Staff UI Software Engineer, Claude.ai Consumer Product",
-      location: "San Francisco, CA | New York City, NY | Seattle, WA",
-      description: "Build React, Next.js, TypeScript, Node.js, polished user-facing product UI, accessibility, performance, responsive UI, streaming and real-time UI, and AI product experiences.",
-    }, profile);
-    const accessibility = scoreJobForProfile({
-      company: "AI Co",
-      title: "Staff Software Engineer, Accessibility",
-      location: "San Francisco, CA | New York City, NY | Seattle, WA",
-      description: "Build accessible shared React and TypeScript UI components, design-system abstractions, automated accessibility testing, WCAG and ARIA tooling, and CI systems for UI platform quality.",
-    }, profile);
-
-    expect(staffUi.overallScore).toBeGreaterThanOrEqual(60);
-    expect(accessibility.overallScore).toBeGreaterThanOrEqual(60);
-    expect(staffUi.concerns).not.toContain("Staff, principal, lead, manager, director, or architect seniority is outside the Senior Frontend IC target.");
-    expect(accessibility.concerns).not.toContain("Staff, principal, lead, manager, director, or architect seniority is outside the Senior Frontend IC target.");
+  it("reject: Cognition on-site SF for remote US profile (listing 1)", () => {
+    const result = evaluateJobAgainstProfile(
+      {
+        company: "Cognition",
+        title: "Product Engineer",
+        location: "San Francisco",
+        remoteType: "onsite",
+        description: "On-site role in San Francisco and New York City. Build AI product experiences with React.",
+        salaryMin: 200000,
+      },
+      usRemoteProfile(),
+    );
+    expect(result.tier).toBe("reject");
+    expect(result.failedRequirements.some((f) => f.code === "remote_type")).toBe(true);
   });
 
-  it("keeps backend, data, developer advocacy, and transformation roles below frontend thresholds", () => {
-    const profile = seniorFrontendProfile();
+  it("reject: India remote for US profile (listing 2)", () => {
+    const result = evaluateJobAgainstProfile(
+      {
+        company: "Smart Working Solutions",
+        title: "Senior Product Engineer (Remote, Full-Time)",
+        location: "India / Ahmedabad / Bangalore / Chennai",
+        remoteType: "remote",
+        description: "Remote engineering role across India offices.",
+        salaryMin: 150000,
+      },
+      usRemoteProfile(),
+    );
+    expect(result.tier).toBe("reject");
+    expect(result.failedRequirements.some((f) => f.code === "geography")).toBe(true);
+  });
+
+  it("reject: OpenAI hybrid SF for remote US profile (listing 3)", () => {
+    const result = evaluateJobAgainstProfile(
+      {
+        company: "OpenAI",
+        title: "Full Stack Engineer, Fleet Scheduling",
+        location: "San Francisco",
+        remoteType: "hybrid",
+        description: "Hybrid role in San Francisco building React dashboards.",
+        salaryMin: 230000,
+      },
+      usRemoteProfile(),
+    );
+    expect(result.tier).toBe("reject");
+    expect(result.failedRequirements.some((f) => f.code === "remote_type")).toBe(true);
+  });
+
+  it("reject: dead listing (listing 4)", () => {
+    const result = evaluateJobAgainstProfile(
+      {
+        company: "Mercor",
+        title: "Remote Frontend Software Engineer",
+        location: "Remote",
+        remoteType: "remote",
+        description: "Freelance contract, 100% remote.",
+        urlHealth: "dead",
+      },
+      usRemoteProfile(),
+    );
+    expect(result.tier).toBe("reject");
+    expect(result.failedRequirements.some((f) => f.code === "listing_alive")).toBe(true);
+  });
+
+  it("reject: Egypt remote + closed (listing 5)", () => {
+    const result = evaluateJobAgainstProfile(
+      {
+        company: "Robusta",
+        title: "Frontend Engineer - 6 months contract",
+        location: "Remote · Cairo, Egypt",
+        remoteType: "remote",
+        description: "Remote role based in Cairo for Egyptian company.",
+        staleScore: 90,
+      },
+      usRemoteProfile(),
+    );
+    expect(result.tier).toBe("reject");
+  });
+
+  it("reject: Fastly Finance Analyst wrong city and low salary (listing 7)", () => {
+    const result = evaluateJobAgainstProfile(
+      {
+        company: "Fastly",
+        title: "Finance Systems Analyst",
+        location: "Denver, CO; New York City, NY",
+        remoteType: "hybrid",
+        description: "Hybrid near local office. Salary $97,070 to $137,040.",
+        salaryMin: 97070,
+        salaryMax: 137040,
+      },
+      lasVegasProfile(),
+    );
+    expect(result.tier).toBe("reject");
+    expect(result.failedRequirements.some((f) => f.code === "title_match")).toBe(true);
+    expect(result.failedRequirements.some((f) => f.code === "geography")).toBe(true);
+  });
+
+  it("reject: staff titles when profile excludes them", () => {
+    const profile = usRemoteProfile();
+    const result = evaluateJobAgainstProfile(
+      {
+        company: "SaaS Co",
+        title: "Staff Engineer - Frontend",
+        location: "Remote, United States",
+        remoteType: "remote",
+        description: "React TypeScript frontend.",
+        salaryMin: 200000,
+      },
+      profile,
+    );
+    expect(result.tier).toBe("reject");
+  });
+
+  it("reject: finance and PM titles", () => {
+    const profile = usRemoteProfile();
     const jobs = [
-      { title: "Senior Data Engineer", description: "Build analytics pipelines and warehouse models with SQL and Python." },
-      { title: "Senior Software Engineer, Backend (Product Engineering)", description: "Build backend services, APIs, and distributed systems." },
-      { title: "Senior Developer Advocate", description: "Create demos, write content, speak at events, and support developer community programs." },
-      { title: "Applied AI Transformation Manager", description: "Lead customer AI transformation strategy and executive stakeholder workshops." },
+      { title: "Senior Data Engineer", description: "Analytics pipelines." },
+      { title: "Senior Developer Advocate", description: "DevRel content." },
     ];
-
-    const scores = jobs.map((job) => scoreJobForProfile({
-      company: "AI Co",
-      title: job.title,
-      location: "Remote, United States",
-      description: job.description,
-    }, profile));
-
-    for (const score of scores) {
-      expect(score.overallScore).toBeLessThan(profile.minimumMatchScore);
+    for (const job of jobs) {
+      const result = evaluateJobAgainstProfile(
+        { company: "Co", title: job.title, location: "Remote, US", remoteType: "remote", description: job.description, salaryMin: 200000 },
+        profile,
+      );
+      expect(result.tier).toBe("reject");
     }
-    expect(scores.flatMap((score) => score.concerns)).toEqual(expect.arrayContaining([
-      "Developer advocacy, curriculum, transformation, support, or solutions role is outside the frontend IC target.",
-    ]));
   });
+});
 
-  it("only keeps full-stack roles when frontend evidence is present", () => {
-    const profile = seniorFrontendProfile();
-
-    const frontendFullStack = scoreJobForProfile({
-      company: "SaaS Co",
-      title: "Senior Full Stack Engineer",
-      location: "Remote, United States",
-      description: "Own React and TypeScript frontend workflows, product UI, API integrations, dashboards, and design system work.",
-    }, profile);
-    const backendFullStack = scoreJobForProfile({
-      company: "SaaS Co",
-      title: "Senior Full Stack Engineer",
-      location: "Remote, United States",
-      description: "Own Java backend services, Kafka pipelines, database migrations, and infrastructure automation.",
-    }, profile);
-
-    expect(frontendFullStack.overallScore).toBeGreaterThanOrEqual(profile.minimumMatchScore);
-    expect(backendFullStack.overallScore).toBeLessThan(profile.minimumMatchScore);
-  });
-
-  it("keeps C++ mission autonomy roles below frontend/full-stack thresholds", () => {
+describe("scoreJobForProfile backward compatibility", () => {
+  it("returns tier and requirement arrays", () => {
     const profile = {
-      name: "Senior Frontend",
-      titles: ["Senior Frontend Engineer", "Senior Full Stack Engineer"],
-      keywordsRequired: ["React", "TypeScript"],
-      keywordsPreferred: ["Next.js", "API integrations"],
+      name: "Test",
+      titles: ["Senior Frontend Engineer"],
+      keywordsRequired: [],
+      keywordsPreferred: [],
       keywordsExcluded: [],
       excludedCompanies: [],
       excludedTitles: [],
@@ -144,54 +224,19 @@ describe("scoreJobForProfile", () => {
       includeUnknownSalary: true,
       minimumMatchScore: 75,
       remotePreference: "remote_us_only",
+      remotePreferences: ["remote_us_only"],
       relocationPreference: "unknown",
       countries: ["United States"],
+      cities: [],
+      salaryMin: null,
     } as unknown as JobSearchProfile;
 
-    const score = scoreJobForProfile({
-      company: "Defense Co",
-      title: "C++ Mission Software Engineer, Mission Autonomy",
-      location: "United States",
-      description: "Build C++ autonomy software for robotics, embedded systems, and real-time mission software.",
-    }, profile);
-
-    expect(score.overallScore).toBeLessThan(profile.minimumMatchScore);
-    expect(score.concerns).toContain("Low-level C++, embedded, robotics, or autonomy role does not match the target web/frontend/full-stack profile.");
-  });
-
-  it("keeps electrical engineering and flight software roles below web profile thresholds", () => {
-    const profile = {
-      name: "Senior Frontend",
-      titles: ["Senior Software Engineer", "Senior Frontend Engineer"],
-      keywordsRequired: ["React", "TypeScript", "JavaScript"],
-      keywordsPreferred: ["Next.js", "API integrations"],
-      keywordsExcluded: [],
-      excludedCompanies: [],
-      excludedTitles: [],
-      industries: [],
-      includeUnknownSalary: true,
-      minimumMatchScore: 75,
-      remotePreference: "remote_us_only",
-      relocationPreference: "unknown",
-      countries: ["United States"],
-    } as unknown as JobSearchProfile;
-
-    const electrical = scoreJobForProfile({
-      company: "Defense Co",
-      title: "Electrical Engineering Technical Lead",
-      location: "United States",
-      description: "Lead electrical engineering work for avionics, RF systems, hardware testing, and aerospace platforms.",
-    }, profile);
-    const flight = scoreJobForProfile({
-      company: "Defense Co",
-      title: "Flight Software Engineer, Embedded C/C++, Air Dominance & Strike - Advanced Effects",
-      location: "United States",
-      description: "Develop embedded C/C++ flight software, RTOS integrations, and weapons systems for advanced effects.",
-    }, profile);
-
-    expect(electrical.overallScore).toBeLessThan(profile.minimumMatchScore);
-    expect(flight.overallScore).toBeLessThan(profile.minimumMatchScore);
-    expect(electrical.concerns).toContain("Low-level C++, embedded, robotics, or autonomy role does not match the target web/frontend/full-stack profile.");
-    expect(flight.concerns).toContain("Low-level C++, embedded, robotics, or autonomy role does not match the target web/frontend/full-stack profile.");
+    const score = scoreJobForProfile(
+      { company: "Co", title: "Senior Frontend Engineer", location: "Remote US", remoteType: "remote", description: "React" },
+      profile,
+    );
+    expect(score).toHaveProperty("tier");
+    expect(score).toHaveProperty("failedRequirements");
+    expect(score).toHaveProperty("passedRequirements");
   });
 });

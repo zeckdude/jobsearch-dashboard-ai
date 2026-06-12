@@ -2,6 +2,8 @@ import { PrismaClient } from "@prisma/client";
 import { upsertApplicationAnswerMemory } from "../src/lib/application-answer-memory";
 import { syncJobSearchOsProjectEvidence } from "../src/lib/evidence/ingest";
 import { configToPrismaJson, defaultCompanySourceConfig } from "../src/lib/job-search/company-source-config";
+import { CANONICAL_SOURCE_NAMES } from "../src/lib/job-search/source-display";
+import { renameLegacyJobSourceNames } from "../src/lib/job-search/source-records";
 import { searchQueryTemplates } from "../src/lib/job-search/source-catalog";
 import { prisma as appPrisma } from "../src/lib/prisma";
 import { defaultResumeProfiles, resumeProfileJson } from "../src/lib/resume-profiles/defaults";
@@ -11,6 +13,8 @@ const prisma = new PrismaClient();
 const userEmail = process.env.SEED_USER_EMAIL ?? "carl@example.com";
 
 async function main() {
+  await renameLegacyJobSourceNames(prisma);
+
   const user = await prisma.user.upsert({
     where: { email: userEmail },
     update: {},
@@ -332,7 +336,7 @@ async function main() {
   const sources = [
     { name: "Manual Paste", type: "manual", baseUrl: null, enabled: true, config: {} },
     {
-      name: "Company Source List",
+      name: CANONICAL_SOURCE_NAMES.companySite,
       type: "company_site",
       baseUrl: null,
       enabled: true,
@@ -342,7 +346,7 @@ async function main() {
     { name: "Lever", type: "lever", baseUrl: "https://jobs.lever.co", enabled: true, config: { qualityTier: "direct_ats", companySlugs: targetCompanySlugs, maxCompanies: 40, maxFetch: 500 } },
     { name: "Ashby", type: "ashby", baseUrl: "https://jobs.ashbyhq.com", enabled: true, config: { qualityTier: "direct_ats", companySlugs: targetCompanySlugs, maxCompanies: 40, maxFetch: 500 } },
     {
-      name: "Search Query Backlog",
+      name: CANONICAL_SOURCE_NAMES.searchQuery,
       type: "search_query",
       baseUrl: "https://search.brave.com",
       enabled: Boolean(process.env.BRAVE_SEARCH_API_KEY),

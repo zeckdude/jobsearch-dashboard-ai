@@ -11,6 +11,7 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { ProfileLink } from "@/components/profile-link";
 import { ScoreChip } from "@/components/ui/score-chip";
 
 export type OptimizerOutput = {
@@ -64,7 +65,10 @@ export function ProfileOptimizerPanel({ latest }: { latest: OptimizerOutput | nu
           {latest?.profileHealthScores?.length ? (
             <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
               {latest.profileHealthScores.map((profile) => (
-                <Chip key={profile.profileId} label={`${profile.name}: ${profile.healthScore}`} color={profile.healthScore >= 70 ? "success" : profile.healthScore >= 50 ? "warning" : "default"} />
+                <Stack key={profile.profileId} direction="row" spacing={0.5} sx={{ alignItems: "center" }}>
+                  <ProfileLink profileId={profile.profileId} name={profile.name} variant="chip" />
+                  <Chip size="small" label={profile.healthScore} color={profile.healthScore >= 70 ? "success" : profile.healthScore >= 50 ? "warning" : "default"} />
+                </Stack>
               ))}
             </Stack>
           ) : null}
@@ -74,7 +78,7 @@ export function ProfileOptimizerPanel({ latest }: { latest: OptimizerOutput | nu
               {latest.recommendedChanges.slice(0, 6).map((change) => (
                 <Box key={`${change.profileId}-${change.action}`} sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.5 }}>
                   <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between" }}>
-                    <Typography sx={{ fontWeight: 850 }}>{change.profileName}</Typography>
+                    <ProfileLink profileId={change.profileId} name={change.profileName} />
                     <Chip size="small" variant="outlined" label={formatAction(change.action)} />
                   </Stack>
                   <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>{change.summary}</Typography>

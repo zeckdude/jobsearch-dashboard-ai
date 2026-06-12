@@ -17,10 +17,14 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { RunSearchControl } from "@/components/run-search-control";
 import { StatusChip } from "@/components/ui/status-chip";
-import { configToPrismaJson, defaultCompanySourceConfig, normalizeCompanySourceConfig } from "@/lib/job-search/company-source-config";
+import { activeCompanySources, configToPrismaJson, defaultCompanySourceConfig, normalizeCompanySourceConfig } from "@/lib/job-search/company-source-config";
+import { isCompanySourceEnabled } from "@/lib/job-search/company-sources";
+import { CANONICAL_SOURCE_NAMES } from "@/lib/job-search/source-display";
+import { companySiteSourceWhere, renameLegacyJobSourceNames, searchQuerySourceWhere } from "@/lib/job-search/source-records";
 import { searchQueryTemplates, sourceCatalog } from "@/lib/job-search/source-catalog";
 import { prisma } from "@/lib/prisma";
 import { AddCompanySourceForm } from "./add-company-source-form";
+import { CompanySourceCard } from "./company-source-card";
 import { AddJobSourceForm } from "./add-job-source-form";
 import { CompanySourceSettings } from "./company-source-settings";
 import { getServiceFallbacks } from "@/lib/service-fallbacks";
@@ -28,23 +32,25 @@ import { ServiceFallbackBanners } from "@/components/ui/service-fallback-banners
 
 export const dynamic = "force-dynamic";
 
-export default async function SourcesPage({ searchParams }: { searchParams?: { q?: string; category?: string; priority?: string } }) {
-  const [source, searchQuerySource, jobSources] = await prisma.$transaction([
-    prisma.jobSource.upsert({
-      where: { type_name: { type: "company_site", name: "Company Source List" } },
+export default async function SourcesPage({ searchParams }: { searchParams?: { q?: string; category?: string; priority?: string; status?: string } }) {
+  const [source, searchQuerySource, jobSources] = await prisma.$transaction(async (tx) => {
+    await renameLegacyJobSourceNames(tx);
+    return Promise.all([
+    tx.jobSource.upsert({
+      where: companySiteSourceWhere,
       update: {},
       create: {
-        name: "Company Source List",
+        name: CANONICAL_SOURCE_NAMES.companySite,
         type: "company_site",
         enabled: true,
         config: configToPrismaJson(defaultCompanySourceConfig()),
       },
     }),
-    prisma.jobSource.upsert({
-      where: { type_name: { type: "search_query", name: "Search Query Backlog" } },
+    tx.jobSource.upsert({
+      where: searchQuerySourceWhere,
       update: {},
       create: {
-        name: "Search Query Backlog",
+        name: CANONICAL_SOURCE_NAMES.searchQuery,
         type: "search_query",
         baseUrl: "https://search.brave.com",
         enabled: Boolean(process.env.BRAVE_SEARCH_API_KEY),
@@ -57,20 +63,27 @@ export default async function SourcesPage({ searchParams }: { searchParams?: { q
         },
       },
     }),
-    prisma.jobSource.findMany(),
-  ]);
+    tx.jobSource.findMany(),
+    ]);
+  });
   const config = normalizeCompanySourceConfig(source.config);
   const query = searchParams?.q?.trim().toLowerCase() ?? "";
   const category = searchParams?.category?.trim() ?? "";
   const priority = Number(searchParams?.priority ?? 0);
   const categories = Array.from(new Set(config.companies.flatMap((company) => company.categories))).sort();
+  const status = searchParams?.status?.trim() ?? "";
   const visibleCompanies = config.companies.filter((company) => {
     const haystack = `${company.name} ${company.categories.join(" ")} ${company.searchTerms.join(" ")}`.toLowerCase();
     const matchesQuery = !query || haystack.includes(query);
     const matchesCategory = !category || company.categories.includes(category);
     const matchesPriority = !priority || company.priority === priority;
-    return matchesQuery && matchesCategory && matchesPriority;
+    const matchesStatus = !status
+      || (status === "active" && isCompanySourceEnabled(company))
+      || (status === "paused" && !isCompanySourceEnabled(company));
+    return matchesQuery && matchesCategory && matchesPriority && matchesStatus;
   });
+  const activeCompanyCount = activeCompanySources(config.companies).length;
+  const pausedCompanyCount = config.companies.length - activeCompanyCount;
   const priorityCounts = [1, 2, 3].map((item) => ({
     priority: item,
     count: config.companies.filter((company) => company.priority === item).length,
@@ -101,7 +114,7 @@ export default async function SourcesPage({ searchParams }: { searchParams?: { q
         <PageHeader
           eyebrow="Source management"
           title="Company Sources"
-          description="Manage the curated company source list used to probe direct careers pages and ATS feeds. This is a source list, not a claim that each company is currently hiring."
+          description="Manage your company watchlist used to probe direct careers pages and ATS feeds. This is a target list, not a claim that each company is currently hiring."
         />
         <ServiceFallbackBanners items={fallbacks} />
 
@@ -129,7 +142,7 @@ export default async function SourcesPage({ searchParams }: { searchParams?: { q
 
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(4, 1fr)" }, gap: 2 }}>
           <Metric label="Status" value={<StatusChip status={source.enabled ? "configured" : "provider_missing"} />} helper={source.enabled ? "Included in search runs" : "Paused"} />
-          <Metric label="Companies" value={config.companies.length.toString()} helper={`${visibleCompanies.length} visible with current filters`} />
+          <Metric label="Companies" value={config.companies.length.toString()} helper={`${activeCompanyCount} active · ${pausedCompanyCount} paused`} />
           <Metric label="Priority ceiling" value={config.priorityMax.toString()} helper="Lower is more targeted" />
           <Metric label="Max fetched" value={config.maxFetch.toString()} helper={`${config.maxCompanies} companies per run`} />
         </Box>
@@ -186,15 +199,15 @@ export default async function SourcesPage({ searchParams }: { searchParams?: { q
           <CardContent>
             <Stack spacing={2}>
               <Box>
-                <Typography variant="h3">Search-query backlog</Typography>
+                <Typography variant="h3">Web search</Typography>
                 <Typography variant="body2" color="text.secondary">
                   {searchQueryConfigured
-                    ? "Targeted open-web queries are active and will run through the Brave Search connector during search runs."
+                    ? "Targeted open-web queries are active and will run through Brave Search during search runs."
                     : hasBraveSearchKey
-                      ? "BRAVE_SEARCH_API_KEY is configured, but the `Search Query Backlog` source is disabled."
+                      ? "BRAVE_SEARCH_API_KEY is configured, but the Web search source is disabled."
                       : searchQuerySource.enabled
-                        ? "The `Search Query Backlog` source is enabled, but BRAVE_SEARCH_API_KEY is not configured for the running server."
-                        : "Targeted open-web queries require the `Search Query Backlog` source to be enabled and BRAVE_SEARCH_API_KEY to be configured."}
+                        ? "The Web search source is enabled, but BRAVE_SEARCH_API_KEY is not configured for the running server."
+                        : "Targeted open-web queries require the Web search source to be enabled and BRAVE_SEARCH_API_KEY to be configured."}
                 </Typography>
               </Box>
               <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
@@ -252,7 +265,7 @@ export default async function SourcesPage({ searchParams }: { searchParams?: { q
                 <Box>
                   <Typography variant="h3">Company list</Typography>
                   <Typography variant="body2" color="text.secondary">
-                    Priority 1 companies are searched first. Categories and search terms guide role filtering after ATS feeds return jobs.
+                    Pause or remove companies you do not want searched. Active companies are ranked by priority; Run settings cap how many are probed each run (currently {config.maxCompanies} of {activeCompanyCount} active).
                   </Typography>
                 </Box>
                 <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
@@ -272,7 +285,7 @@ export default async function SourcesPage({ searchParams }: { searchParams?: { q
                 </Stack>
               </Box>
 
-              <Box component="form" sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "2fr 1fr 1fr" }, gap: 1.5 }}>
+              <Box component="form" sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "2fr 1fr 1fr 1fr" }, gap: 1.5 }}>
                 <input aria-label="Search companies, categories, or terms" name="q" defaultValue={searchParams?.q ?? ""} placeholder="Search companies, categories, or terms" style={inputStyle} />
                 <select aria-label="Filter company sources by category" name="category" defaultValue={category} style={inputStyle}>
                   <option value="">All categories</option>
@@ -284,6 +297,11 @@ export default async function SourcesPage({ searchParams }: { searchParams?: { q
                   <option value="2">Priority 2</option>
                   <option value="3">Priority 3</option>
                 </select>
+                <select aria-label="Filter company sources by status" name="status" defaultValue={status} style={inputStyle}>
+                  <option value="">All statuses</option>
+                  <option value="active">Active only</option>
+                  <option value="paused">Paused only</option>
+                </select>
               </Box>
 
               {visibleCompanies.length === 0 ? (
@@ -291,23 +309,7 @@ export default async function SourcesPage({ searchParams }: { searchParams?: { q
               ) : (
                 <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "1fr 1fr" }, gap: 1.5 }}>
                   {visibleCompanies.slice(0, 120).map((company) => (
-                    <Box key={company.name} sx={{ border: 1, borderColor: "divider", borderRadius: 2, p: 1.5, bgcolor: "background.paper" }}>
-                      <Stack spacing={1}>
-                        <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", alignItems: "flex-start" }}>
-                          <Box>
-                            <Typography sx={{ fontWeight: 900 }}>{company.name}</Typography>
-                            <Typography variant="caption" color="text.secondary">{company.careersQuery}</Typography>
-                          </Box>
-                          <Chip size="small" color={company.priority === 1 ? "success" : company.priority === 2 ? "primary" : "default"} label={`P${company.priority}`} />
-                        </Stack>
-                        <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
-                          {company.categories.slice(0, 6).map((item) => <Chip key={`${company.name}-${item}`} size="small" variant="outlined" label={item} />)}
-                        </Stack>
-                        <Typography variant="caption" color="text.secondary">
-                          {company.searchTerms.slice(0, 5).join(", ")}
-                        </Typography>
-                      </Stack>
-                    </Box>
+                    <CompanySourceCard key={company.name} company={company} />
                   ))}
                 </Box>
               )}

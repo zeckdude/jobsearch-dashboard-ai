@@ -11,7 +11,10 @@ import LinearProgress from "@mui/material/LinearProgress";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { useEffect, useState } from "react";
+import { buildSearchRunRequestBody, SearchRunOptionsFields } from "@/components/search-run-options-fields";
+import { SearchRunStat } from "@/components/search-run-stat";
 import { StatusChip } from "@/components/ui/status-chip";
+import { useSearchRunOptions } from "@/components/use-search-run-options";
 
 type ProgressEvent = {
   at: string;
@@ -39,10 +42,15 @@ export function RunSearchControl({ compact = false }: { compact?: boolean }) {
   const [run, setRun] = useState<Run | null>(null);
   const [error, setError] = useState("");
   const running = run?.status === "running";
+  const { sources, profiles, companySourceCatalog, options, setOptions, loading: optionsLoading, reload: reloadOptions } = useSearchRunOptions();
 
   async function startRun() {
     setError("");
-    const response = await fetch("/api/jobs/search/run", { method: "POST" });
+    const response = await fetch("/api/jobs/search/run", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(buildSearchRunRequestBody(options, sources, profiles)),
+    });
     const body = await response.json();
     if (!response.ok) {
       setError(body.error ?? "Unable to start search.");
@@ -70,6 +78,17 @@ export function RunSearchControl({ compact = false }: { compact?: boolean }) {
 
   return (
     <Stack spacing={1.5}>
+      {!compact && !optionsLoading && sources.length ? (
+        <SearchRunOptionsFields
+          sources={sources}
+          profiles={profiles}
+          companySourceCatalog={companySourceCatalog}
+          value={options}
+          onChange={setOptions}
+          collapsed
+          onSourcesChanged={() => void reloadOptions()}
+        />
+      ) : null}
       <Button variant="contained" startIcon={<PlayArrowIcon />} disabled={running} onClick={startRun}>
         {running ? "Search running..." : "Run search"}
       </Button>
@@ -84,10 +103,10 @@ export function RunSearchControl({ compact = false }: { compact?: boolean }) {
               </Stack>
               {running ? <LinearProgress /> : null}
               <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, 1fr)", sm: "repeat(4, 1fr)" }, gap: 1 }}>
-                <Stat label="Fetched" value={run.jobsFetched} />
-                <Stat label="New" value={run.jobsAfterDedupe} />
-                <Stat label="Matched" value={run.jobsAfterFilters} />
-                <Stat label="Saved" value={run.jobsSaved} />
+                <SearchRunStat runId={run.id} label="Fetched" value={run.jobsFetched} compact />
+                <SearchRunStat runId={run.id} label="New" value={run.jobsAfterDedupe} compact />
+                <SearchRunStat runId={run.id} label="Matched" value={run.jobsAfterFilters} compact />
+                <SearchRunStat runId={run.id} label="Saved" value={run.jobsSaved} compact />
               </Box>
               <Stack spacing={0.75}>
                 {latest.map((event) => (
@@ -106,15 +125,6 @@ export function RunSearchControl({ compact = false }: { compact?: boolean }) {
         </Typography>
       ) : null}
     </Stack>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: number }) {
-  return (
-    <Box sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1 }}>
-      <Typography variant="caption" color="text.secondary">{label}</Typography>
-      <Typography sx={{ fontWeight: 850, fontVariantNumeric: "tabular-nums" }}>{value}</Typography>
-    </Box>
   );
 }
 

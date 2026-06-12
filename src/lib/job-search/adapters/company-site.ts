@@ -1,5 +1,5 @@
 import type { JobSearchProfile, JobSource } from "@prisma/client";
-import { companySources, type CompanySource } from "@/lib/job-search/company-sources";
+import { companySources, isCompanySourceEnabled, type CompanySource } from "@/lib/job-search/company-sources";
 import type { JobSourceAdapter, NormalizedJobPosting, RawJobPosting } from "@/lib/job-search/source-adapter";
 
 type AtsProvider = "greenhouse" | "lever" | "ashby";
@@ -28,19 +28,20 @@ const providerFetchTimeoutMs = 10_000;
 
 export const companySiteAdapter: JobSourceAdapter = {
   name: "Company Career Pages",
-  async fetchJobs(profile: JobSearchProfile, source: JobSource) {
+  async fetchJobs(_: JobSearchProfile, source: JobSource) {
     const configCompanies = readCompanies(source.config);
     const priorityMax = readNumber(source.config, "priorityMax", 2);
     const maxCompanies = readNumber(source.config, "maxCompanies", 80);
     const maxFetch = readNumber(source.config, "maxFetch", 800);
     const maxJobsPerCompany = readNumber(source.config, "maxJobsPerCompany", 12);
     const companies = (configCompanies.length ? configCompanies : companySources)
-      .filter((company) => company.priority <= priorityMax)
+      .filter((company) => isCompanySourceEnabled(company) && company.priority <= priorityMax)
+      .sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name))
       .slice(0, maxCompanies);
     const results: RawJobPosting[] = [];
 
     for (const company of companies) {
-      const companyJobs = await fetchCompanyJobs(company, profile);
+      const companyJobs = await fetchCompanyBoardJobs(company);
       results.push(...companyJobs.slice(0, maxJobsPerCompany));
       if (results.length >= maxFetch) break;
     }
@@ -67,20 +68,41 @@ export const companySiteAdapter: JobSourceAdapter = {
   },
 };
 
-async function fetchCompanyJobs(company: CompanySource, profile: JobSearchProfile) {
+export function companySourceFromRawJob(job: RawJobPosting): CompanySource | null {
+  if (!job.rawData || typeof job.rawData !== "object" || Array.isArray(job.rawData)) return null;
+  const record = job.rawData as Record<string, unknown>;
+  if (!record.companySource) return null;
+
+  const priority = record.priority;
+  return {
+    name: job.company,
+    categories: Array.isArray(record.categories) ? record.categories.filter((item): item is string => typeof item === "string") : [],
+    priority: priority === 1 || priority === 2 || priority === 3 ? priority : 2,
+    searchTerms: Array.isArray(record.searchTerms) ? record.searchTerms.filter((item): item is string => typeof item === "string") : [],
+    careersQuery: typeof record.careersQuery === "string" ? record.careersQuery : "",
+  };
+}
+
+export function filterCompanyJobsForProfile(jobs: RawJobPosting[], profile: JobSearchProfile): RawJobPosting[] {
+  return jobs.filter((job) => {
+    const company = companySourceFromRawJob(job);
+    if (!company) return true;
+    return likelyProfileFit(job, company, profile);
+  });
+}
+
+async function fetchCompanyBoardJobs(company: CompanySource) {
   const providers: AtsProvider[] = ["greenhouse", "lever", "ashby"];
-  const results: RawJobPosting[] = [];
 
   for (const provider of providers) {
     const slugs = company.atsSlugs?.[provider] ?? [];
     for (const slug of slugs) {
       const jobs = await fetchProviderJobs(provider, slug, company);
-      results.push(...jobs.filter((job) => likelyProfileFit(job, company, profile)));
-      if (results.length > 0) return results;
+      if (jobs.length > 0) return jobs;
     }
   }
 
-  return results;
+  return [];
 }
 
 async function fetchProviderJobs(provider: AtsProvider, slug: string, company: CompanySource) {
@@ -152,7 +174,7 @@ async function fetchAshby(slug: string, company: CompanySource): Promise<RawJobP
   }));
 }
 
-function likelyProfileFit(job: RawJobPosting, company: CompanySource, profile: JobSearchProfile) {
+export function likelyProfileFit(job: RawJobPosting, company: CompanySource, profile: JobSearchProfile) {
   const title = job.title.toLowerCase();
   const haystack = `${job.title} ${job.location ?? ""} ${job.description}`.toLowerCase();
   const searchTerms = [...company.searchTerms, ...readJsonStrings(profile.titles), ...readJsonStrings(profile.keywordsPreferred)];

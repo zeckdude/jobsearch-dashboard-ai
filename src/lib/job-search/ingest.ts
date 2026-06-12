@@ -1,13 +1,37 @@
-import { JobSearchRun, NotificationSettings, Prisma, User } from "@prisma/client";
+import { JobSearchProfile, JobSearchRun, JobSource, NotificationSettings, Prisma, User } from "@prisma/client";
 import { runDuplicateStaleJobDetectorAgent } from "@/lib/agents/duplicate-stale-job-detector";
 import { runRecruitingAgency } from "@/lib/applications/recruiting-agency";
 import { runJobFitScoringAgent } from "@/lib/agents/job-fit-scorer";
 import { createCanonicalJobKeys, createJobContentHash, hasSameCanonicalJob } from "@/lib/job-search/dedupe";
 import { getAdapterForSource } from "@/lib/job-search/adapters";
-import { classifyJobSearchTitle, scoreJobForProfile } from "@/lib/job-search/scoring";
-import { isListingReviewPosting, type NormalizedJobPosting } from "@/lib/job-search/source-adapter";
+import {
+  fetchSourceJobsOnce,
+  jobCandidatesForProfile,
+  recordFetchedSourceJobs,
+} from "@/lib/job-search/fetch-once";
+import { classifyJobSearchTitle, evaluateJobAgainstProfile, type EvaluationResult } from "@/lib/job-search/scoring";
+import { checkJobApplicationUrl, staleScoreForUrlHealth } from "@/lib/job-search/url-health";
+import { isListingReviewPosting, type JobSourceAdapter, type NormalizedJobPosting, type RawJobPosting } from "@/lib/job-search/source-adapter";
 import { isJobSuppressed, loadJobSuppressionStatesByUserIds } from "@/lib/jobs/suppression";
 import { sendNotification } from "@/lib/notifications/send";
+import { applyPostedDateFilter, postedDateFilterSummary } from "@/lib/job-search/posted-date-filter";
+import {
+  flushFetchedSearchRunItems,
+  pipelineRunItem,
+  recordSearchRunItems,
+} from "@/lib/job-search/run-items";
+import { applyCompanySourceRunSettings } from "@/lib/job-search/company-source-run-settings";
+import { prepareBoardSourceForRun } from "@/lib/job-search/paused-board-source";
+import { fetchedFilterSummary, filterJobsBeforeFetchedRecording } from "@/lib/job-search/filter-fetched-jobs";
+import { applySourceItemSelection } from "@/lib/job-search/source-item-selection";
+import {
+  loadJobSearchPreferences,
+  parseStoredRunOptions,
+  preferencesToRunOptions,
+  resolveRunProfiles,
+  resolveRunSources,
+  type ResolvedSearchRunOptions,
+} from "@/lib/job-search/run-options";
 import { prisma } from "@/lib/prisma";
 
 type ProgressEvent = {
@@ -26,6 +50,10 @@ type JobSearchStats = {
   jobsSuppressed?: number;
   listingPagesSuppressed?: number;
   jobsBelowThreshold?: number;
+  jobsStaleSkipped?: number;
+  jobsTitleFiltered?: number;
+  jobsDeadSkipped?: number;
+  jobsUrlChecked?: number;
   frontendTitles?: number;
   fullStackTitles?: number;
   staffPrincipalLeadTitles?: number;
@@ -56,13 +84,23 @@ type AgencyHandoffProgress = {
 const sourceFetchTimeoutMs = 90 * 1000;
 
 export async function runJobSearch(triggeredBy: "manual" | "cron" = "manual", runId?: string) {
-  const profiles = await prisma.jobSearchProfile.findMany({
-    where: {
-      enabled: true,
-      ...(triggeredBy === "cron" ? { scheduleEnabled: true } : {}),
+  const user = await prisma.user.findFirst({
+    include: {
+      notificationSettings: true,
+      profile: { include: { experienceBullets: { where: { truthLevel: "verified" } } } },
     },
+    orderBy: { createdAt: "asc" },
   });
-  const run = runId
+  const preferences = await loadJobSearchPreferences(user?.id);
+  const existingRun = runId
+    ? await prisma.jobSearchRun.findUnique({ where: { id: runId } })
+    : null;
+  const runOptions: ResolvedSearchRunOptions = existingRun
+    ? (parseStoredRunOptions(existingRun.runOptions) ?? preferencesToRunOptions(preferences))
+    : preferencesToRunOptions(preferences);
+
+  const profiles = await resolveRunProfiles(runOptions.profileIds, triggeredBy);
+  const run = existingRun
     ? await prisma.jobSearchRun.update({
         where: { id: runId },
         data: {
@@ -80,14 +118,7 @@ export async function runJobSearch(triggeredBy: "manual" | "cron" = "manual", ru
           profileIds: profiles.map((profile) => profile.id),
         },
       });
-  const user = await prisma.user.findFirst({
-    include: {
-      notificationSettings: true,
-      profile: { include: { experienceBullets: { where: { truthLevel: "verified" } } } },
-    },
-    orderBy: { createdAt: "asc" },
-  });
-  const sources = (await prisma.jobSource.findMany({ where: { enabled: true, NOT: { type: "manual" } } }))
+  const sources = (await resolveRunSources(runOptions.sourceIds))
     .sort((a, b) => sourcePriority(a.type) - sourcePriority(b.type));
   const stats = {
     jobsFetched: 0,
@@ -98,6 +129,10 @@ export async function runJobSearch(triggeredBy: "manual" | "cron" = "manual", ru
     jobsSuppressed: 0,
     listingPagesSuppressed: 0,
     jobsBelowThreshold: 0,
+    jobsStaleSkipped: 0,
+    jobsTitleFiltered: 0,
+    jobsDeadSkipped: 0,
+    jobsUrlChecked: 0,
     frontendTitles: 0,
     fullStackTitles: 0,
     staffPrincipalLeadTitles: 0,
@@ -110,120 +145,147 @@ export async function runJobSearch(triggeredBy: "manual" | "cron" = "manual", ru
   const newMatches: Array<{ score: number; title: string; company: string; profile: string }> = [];
   const suppressionStateByUserId = await loadJobSuppressionStatesByUserIds(profiles.map((profile) => profile.userId));
 
-  await appendProgress(run.id, `Starting job search across ${profiles.length} enabled profiles and ${sources.length} enabled external sources.`, stats);
+  await appendProgress(
+    run.id,
+    `Starting job search across ${profiles.length} profile(s) and ${sources.length} source(s). Posting date: ${postedDateFilterSummary(runOptions.postedDate)}.`,
+    stats,
+  );
 
-  for (const profile of profiles) {
-    let savedForProfile = 0;
-    await appendProgress(run.id, `Profile: ${profile.name}`, stats);
-    for (const source of sources) {
-      const adapter = getAdapterForSource(source.type);
-      if (!adapter) continue;
+  async function isCancelled(): Promise<boolean> {
+    const current = await prisma.jobSearchRun.findUnique({ where: { id: run.id }, select: { status: true } });
+    return current?.status === "cancelled";
+  }
 
-      try {
-        await appendProgress(run.id, `Fetching ${source.name} jobs for ${profile.name}.`, stats);
-        const rawJobs = await withTimeout(
-          adapter.fetchJobs(profile, source),
-          sourceFetchTimeoutMs,
-          `${source.name} fetch timed out after ${Math.round(sourceFetchTimeoutMs / 60_000)} minutes.`,
-        );
-        stats.jobsFetched += rawJobs.length;
-        const listingReviews = rawJobs.filter(isListingReviewPosting);
-        if (listingReviews.length > 0) {
-          stats.listingPagesSuppressed += listingReviews.length;
-          for (const listing of listingReviews.slice(0, 20)) {
-            await appendProgress(run.id, listingReviewMessage(listing), stats);
-          }
+  // jobsFetched counts unique raw jobs per source (deduped), not multiplied by profile count.
+  for (const source of sources) {
+    if (await isCancelled()) {
+      await prisma.jobSearchRun.update({
+        where: { id: run.id },
+        data: {
+          jobsFetched: stats.jobsFetched,
+          jobsAfterDedupe: stats.jobsAfterDedupe,
+          jobsAfterFilters: stats.jobsAfterFilters,
+          jobsSaved: stats.jobsSaved,
+        },
+      });
+      await flushFetchedSearchRunItems(run.id);
+      await appendProgress(run.id, `Search cancelled. Saved ${stats.jobsSaved} matches before stopping.`, stats);
+      return;
+    }
+
+    const adapter = getAdapterForSource(source.type);
+    if (!adapter) continue;
+
+    try {
+      const fetchSource = prepareBoardSourceForRun(
+        applySourceItemSelection(
+          applyCompanySourceRunSettings(source, runOptions.companySourceRun),
+          runOptions.sourceItemSelections[source.id],
+        ),
+        true,
+      );
+      const selectionCount = runOptions.sourceItemSelections[source.id]?.length;
+      await appendProgress(
+        run.id,
+        selectionCount !== undefined
+          ? `Fetching ${source.name} (${selectionCount} selected items).`
+          : `Fetching ${source.name}.`,
+        stats,
+      );
+      const uniqueRawJobs = await fetchSourceJobsOnce(fetchSource, profiles, withTimeout, sourceFetchTimeoutMs);
+
+      const listingReviews = uniqueRawJobs.filter(isListingReviewPosting);
+      if (listingReviews.length > 0) {
+        stats.listingPagesSuppressed = (stats.listingPagesSuppressed ?? 0) + listingReviews.length;
+        for (const listing of listingReviews.slice(0, 20)) {
+          await appendProgress(run.id, listingReviewMessage(listing), stats);
         }
-        const jobCandidates = rawJobs.filter((rawJob) => !isListingReviewPosting(rawJob));
-        await updateRunStats(run.id, stats, `Fetched ${rawJobs.length} jobs from ${source.name}.`);
-
-        const rankedJobs = (await Promise.all(jobCandidates.map(async (rawJob) => {
-          const normalized = await adapter.normalize(rawJob);
-          const score = scoreJobForProfile(normalized, profile);
-          const classification = classifyJobSearchTitle(normalized.title, normalized.description);
-          recordSearchDiagnostics(stats, classification);
-          return { normalized, score, classification };
-        }))).sort((a, b) => b.score.overallScore - a.score.overallScore);
-        stats.jobsScored += rankedJobs.length;
-        const jobsToScore = rankedJobs.slice(0, Math.min(rankedJobs.length, Math.max(profile.maxResultsPerRun * 8, 160), 600));
-        await appendProgress(run.id, `Scoring ${jobsToScore.length} ${source.name} jobs for ${profile.name}.`, stats);
-
-        for (const [index, rankedJob] of jobsToScore.entries()) {
-          if (savedForProfile >= profile.maxResultsPerRun) break;
-
-          const { normalized, score } = rankedJob;
-          const suppressionState = suppressionStateByUserId.get(profile.userId);
-          if (suppressionState && isJobSuppressed(jobIdentity(normalized), suppressionState)) {
-            stats.jobsSuppressed += 1;
-            continue;
-          }
-
-          const { job, isNew } = await upsertDedupedJob(normalized, source.id);
-          if (suppressionState && isJobSuppressed(job, suppressionState)) {
-            stats.jobsSuppressed += 1;
-            continue;
-          }
-          if (isNew) stats.jobsAfterDedupe += 1;
-
-          if (score.overallScore >= profile.minimumMatchScore) {
-            const existing = await prisma.jobProfileMatch.findUnique({
-              where: {
-                jobPostingId_jobSearchProfileId: {
-                  jobPostingId: job.id,
-                  jobSearchProfileId: profile.id,
-                },
-              },
-            });
-            await prisma.jobProfileMatch.upsert({
-              where: {
-                jobPostingId_jobSearchProfileId: {
-                  jobPostingId: job.id,
-                  jobSearchProfileId: profile.id,
-                },
-              },
-              update: {
-                ...score,
-                status: existing?.status ?? "needs_review",
-              },
-              create: {
-                jobPostingId: job.id,
-                jobSearchProfileId: profile.id,
-                status: "needs_review",
-                ...score,
-              },
-            });
-            await runJobFitScoringAgent({
-              jobPostingId: job.id,
-              jobSearchProfileId: profile.id,
-              userId: user?.id,
-            }).catch(async (error) => {
-              await appendProgress(run.id, `Evidence scoring failed for ${job.title} at ${job.company}: ${error instanceof Error ? error.message : "Unknown scoring failure"}`, stats);
-            });
-            stats.jobsAfterFilters += 1;
-            if (!existing) {
-              stats.jobsSaved += 1;
-              savedForProfile += 1;
-              newMatches.push({ score: score.overallScore, title: job.title, company: job.company, profile: profile.name });
-              await updateRunStats(run.id, stats, `Saved match: ${score.overallScore} - ${job.title} at ${job.company}.`);
-            }
-          } else {
-            stats.jobsBelowThreshold += 1;
-          }
-          if ((index + 1) % 50 === 0) {
-            await updateRunStats(run.id, stats, `Scored ${index + 1}/${jobsToScore.length} ${source.name} jobs for ${profile.name}.`);
-          }
-        }
-        await updateRunStats(run.id, stats, `Finished ${source.name} for ${profile.name}.`);
-      } catch (error) {
-        errors.push({
-          source: source.name,
-          profile: profile.name,
-          message: error instanceof Error ? error.message : "Unknown source adapter error",
-        });
-        await appendProgress(run.id, `Error from ${source.name} for ${profile.name}: ${error instanceof Error ? error.message : "Unknown source adapter error"}`, stats);
       }
+
+      const beforeDateFilter = uniqueRawJobs.filter((rawJob) => !isListingReviewPosting(rawJob));
+      const { kept: allJobCandidates, skipped: staleSkipped } = applyPostedDateFilter(beforeDateFilter, runOptions.postedDate);
+      if (staleSkipped > 0) {
+        stats.jobsStaleSkipped = (stats.jobsStaleSkipped ?? 0) + staleSkipped;
+        await appendProgress(
+          run.id,
+          `Skipped ${staleSkipped} posting(s) from ${source.name} based on posting date filters.`,
+          stats,
+        );
+      }
+
+      const fetchFilter = await filterJobsBeforeFetchedRecording(allJobCandidates, source.type, profiles);
+      if (fetchFilter.titleFiltered > 0) {
+        stats.jobsTitleFiltered = (stats.jobsTitleFiltered ?? 0) + fetchFilter.titleFiltered;
+      }
+      if (fetchFilter.deadSkipped > 0) {
+        stats.jobsDeadSkipped = (stats.jobsDeadSkipped ?? 0) + fetchFilter.deadSkipped;
+      }
+      if (fetchFilter.urlChecked > 0) {
+        stats.jobsUrlChecked = (stats.jobsUrlChecked ?? 0) + fetchFilter.urlChecked;
+      }
+      if (fetchFilter.titleFiltered > 0 || fetchFilter.deadSkipped > 0) {
+        await appendProgress(
+          run.id,
+          `Search-query filter for ${source.name}:${fetchedFilterSummary(fetchFilter, source.type)}`,
+          stats,
+        );
+      }
+
+      recordFetchedSourceJobs(run.id, source, fetchFilter.kept, (count) => {
+        stats.jobsFetched += count;
+      });
+
+      await updateRunStats(
+        run.id,
+        stats,
+        `Fetched ${fetchFilter.kept.length} unique jobs from ${source.name} (${uniqueRawJobs.length} raw, ${staleSkipped} skipped by date${fetchedFilterSummary(fetchFilter, source.type)}).`,
+      );
+
+      for (const profile of profiles) {
+        if (await isCancelled()) break;
+
+        const jobCandidates = jobCandidatesForProfile(source.type, fetchFilter.kept, profile);
+        await processSourceJobsForProfile({
+          run,
+          source,
+          adapter,
+          profile,
+          jobCandidates,
+          stats,
+          user,
+          suppressionStateByUserId,
+          newMatches,
+        });
+      }
+
+      await updateRunStats(run.id, stats, `Finished ${source.name}.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown source adapter error";
+      errors.push({
+        source: source.name,
+        profile: "",
+        message,
+      });
+      await appendProgress(run.id, `Error from ${source.name}: ${message}`, stats);
     }
   }
+
+  if (await isCancelled()) {
+    await prisma.jobSearchRun.update({
+      where: { id: run.id },
+      data: {
+        jobsFetched: stats.jobsFetched,
+        jobsAfterDedupe: stats.jobsAfterDedupe,
+        jobsAfterFilters: stats.jobsAfterFilters,
+        jobsSaved: stats.jobsSaved,
+      },
+    });
+    await flushFetchedSearchRunItems(run.id);
+    await appendProgress(run.id, `Search cancelled. Saved ${stats.jobsSaved} matches before stopping.`, stats);
+    return;
+  }
+
+  await flushFetchedSearchRunItems(run.id);
 
   const status = errors.length && stats.jobsFetched > 0 ? "partial" : errors.length ? "failed" : "completed";
   const updatedRun = await prisma.jobSearchRun.update({
@@ -362,6 +424,133 @@ export async function autoRunAgencyAfterSearch(input: {
   }
 }
 
+async function processSourceJobsForProfile(input: {
+  run: JobSearchRun;
+  source: JobSource;
+  adapter: JobSourceAdapter;
+  profile: JobSearchProfile;
+  jobCandidates: RawJobPosting[];
+  stats: JobSearchStats;
+  user: (User & { notificationSettings: NotificationSettings | null }) | null;
+  suppressionStateByUserId: Awaited<ReturnType<typeof loadJobSuppressionStatesByUserIds>>;
+  newMatches: Array<{ score: number; title: string; company: string; profile: string }>;
+}) {
+  const { run, source, adapter, profile, jobCandidates, stats, user, suppressionStateByUserId, newMatches } = input;
+  let savedForProfile = 0;
+
+  const rankedJobs = (await Promise.all(jobCandidates.map(async (rawJob) => {
+    const normalized = await adapter.normalize(rawJob);
+    const evaluation = evaluateJobAgainstProfile(normalized, profile);
+    const classification = classifyJobSearchTitle(normalized.title, normalized.description);
+    recordSearchDiagnostics(stats, classification);
+    return { normalized, evaluation, classification, rawJob };
+  })))
+    .filter((item) => item.evaluation.tier !== "reject")
+    .sort((a, b) => tierSortRank(b.evaluation.tier) - tierSortRank(a.evaluation.tier) || b.evaluation.overallScore - a.evaluation.overallScore);
+  stats.jobsScored = (stats.jobsScored ?? 0) + rankedJobs.length;
+  const jobsToScore = rankedJobs.slice(0, Math.min(rankedJobs.length, Math.max(profile.maxResultsPerRun * 8, 160), 600));
+  await appendProgress(run.id, `Scoring ${jobsToScore.length} ${source.name} jobs for ${profile.name}.`, stats);
+
+  for (const [index, rankedJob] of jobsToScore.entries()) {
+    if (savedForProfile >= profile.maxResultsPerRun) break;
+
+    const { normalized, evaluation, rawJob } = rankedJob;
+    const suppressionState = suppressionStateByUserId.get(profile.userId);
+    if (suppressionState && isJobSuppressed(jobIdentity(normalized), suppressionState)) {
+      stats.jobsSuppressed = (stats.jobsSuppressed ?? 0) + 1;
+      continue;
+    }
+
+    let urlHealth: "dead" | "closed" | "ok" | "blocked" | undefined;
+    if (normalized.applicationUrl) {
+      const urlResult = await checkJobApplicationUrl(normalized.applicationUrl);
+      urlHealth = urlResult.status;
+      if (urlResult.status === "dead" || urlResult.status === "closed") {
+        stats.jobsBelowThreshold = (stats.jobsBelowThreshold ?? 0) + 1;
+        continue;
+      }
+    }
+
+    const finalEvaluation = urlHealth
+      ? evaluateJobAgainstProfile({ ...normalized, urlHealth }, profile)
+      : evaluation;
+    if (finalEvaluation.tier === "reject") {
+      stats.jobsBelowThreshold = (stats.jobsBelowThreshold ?? 0) + 1;
+      continue;
+    }
+
+    const { job, isNew } = await upsertDedupedJob(normalized, source.id);
+    if (suppressionState && isJobSuppressed(job, suppressionState)) {
+      stats.jobsSuppressed = (stats.jobsSuppressed ?? 0) + 1;
+      continue;
+    }
+    if (isNew) {
+      stats.jobsAfterDedupe += 1;
+      await recordSearchRunItems(run.id, [
+        pipelineRunItem("new", job, profile, source.name, finalEvaluation, rawJob.rawData, source.type),
+      ]);
+    }
+
+    if (urlHealth && urlHealth !== "ok" && urlHealth !== "blocked") {
+      const staleScore = staleScoreForUrlHealth(urlHealth, job.staleScore);
+      if (staleScore !== job.staleScore) {
+        await prisma.jobPosting.update({ where: { id: job.id }, data: { staleScore } });
+      }
+    }
+
+    const existing = await prisma.jobProfileMatch.findUnique({
+      where: {
+        jobPostingId_jobSearchProfileId: {
+          jobPostingId: job.id,
+          jobSearchProfileId: profile.id,
+        },
+      },
+    });
+    const matchPayload = buildMatchPayload(finalEvaluation, profile.id, discoveryMetadata(rawJob, profile.id, profile.name, source.name, run.id));
+    await prisma.jobProfileMatch.upsert({
+      where: {
+        jobPostingId_jobSearchProfileId: {
+          jobPostingId: job.id,
+          jobSearchProfileId: profile.id,
+        },
+      },
+      update: {
+        ...matchPayload,
+        status: existing?.status ?? "needs_review",
+      },
+      create: {
+        jobPostingId: job.id,
+        jobSearchProfileId: profile.id,
+        status: "needs_review",
+        ...matchPayload,
+      },
+    });
+    await runJobFitScoringAgent({
+      jobPostingId: job.id,
+      jobSearchProfileId: profile.id,
+      userId: user?.id,
+    }).catch(async (error) => {
+      await appendProgress(run.id, `Evidence scoring failed for ${job.title} at ${job.company}: ${error instanceof Error ? error.message : "Unknown scoring failure"}`, stats);
+    });
+    stats.jobsAfterFilters += 1;
+    await recordSearchRunItems(run.id, [
+      pipelineRunItem("matched", job, profile, source.name, finalEvaluation, rawJob.rawData, source.type),
+    ]);
+    if (!existing) {
+      stats.jobsSaved += 1;
+      savedForProfile += 1;
+      newMatches.push({ score: finalEvaluation.overallScore, title: job.title, company: job.company, profile: profile.name });
+      await recordSearchRunItems(run.id, [
+        pipelineRunItem("saved", job, profile, source.name, finalEvaluation, rawJob.rawData, source.type),
+      ]);
+      await updateRunStats(run.id, stats, `Saved ${finalEvaluation.tier} match: ${finalEvaluation.overallScore} - ${job.title} at ${job.company}.`);
+    }
+    if ((index + 1) % 50 === 0) {
+      await updateRunStats(run.id, stats, `Scored ${index + 1}/${jobsToScore.length} ${source.name} jobs for ${profile.name}.`);
+    }
+  }
+}
+
 function jobIdentity(job: Pick<NormalizedJobPosting, "company" | "title" | "location" | "applicationUrl">) {
   return {
     company: job.company,
@@ -457,6 +646,57 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string)
   });
 }
 
+function tierSortRank(tier: EvaluationResult["tier"]) {
+  if (tier === "full") return 2;
+  if (tier === "partial") return 1;
+  return 0;
+}
+
+function buildMatchPayload(evaluation: EvaluationResult, profileId: string, discovery: Record<string, unknown>) {
+  return {
+    matchTier: evaluation.tier === "partial" ? "partial" as const : "full" as const,
+    discoveredByProfileId: profileId,
+    overallScore: evaluation.overallScore,
+    titleFit: evaluation.titleFit,
+    skillFit: evaluation.skillFit,
+    seniorityFit: evaluation.seniorityFit,
+    industryFit: evaluation.industryFit,
+    compensationFit: evaluation.compensationFit,
+    remoteFit: evaluation.remoteFit,
+    relocationFit: evaluation.relocationFit,
+    strongestMatches: evaluation.strongestMatches as Prisma.InputJsonValue,
+    concerns: evaluation.concerns as Prisma.InputJsonValue,
+    missingKeywords: evaluation.missingKeywords as Prisma.InputJsonValue,
+    failedRequirements: evaluation.failedRequirements as Prisma.InputJsonValue,
+    passedRequirements: evaluation.passedRequirements as Prisma.InputJsonValue,
+    discoveryMetadata: discovery as Prisma.InputJsonValue,
+    recommendedAction: evaluation.recommendedAction,
+    aiExplanation: evaluation.aiExplanation,
+  };
+}
+
+function discoveryMetadata(rawJob: { rawData?: unknown }, profileId: string, profileName: string, sourceName: string, searchRunId: string) {
+  const rawData = rawJob.rawData && typeof rawJob.rawData === "object" && !Array.isArray(rawJob.rawData)
+    ? rawJob.rawData as Record<string, unknown>
+    : {};
+  return {
+    profileId,
+    profileName,
+    sourceName,
+    searchRunId,
+    query: typeof rawData.query === "string" ? rawData.query : undefined,
+    provider: typeof rawData.provider === "string" ? rawData.provider : undefined,
+  };
+}
+
+function stripDiscoveryFromDescription(description: string) {
+  return description
+    .split("\n\n")
+    .filter((block) => !/^matched query:/i.test(block.trim()) && !/^profile:/i.test(block.trim()) && !/^search listing page review:/i.test(block.trim()))
+    .join("\n\n")
+    .trim();
+}
+
 function sourcePriority(type: string) {
   const priority: Record<string, number> = {
     greenhouse: 1,
@@ -488,7 +728,10 @@ async function upsertDedupedJob(normalized: NormalizedJobPosting, sourceId: stri
     })) ??
     (await findCanonicalDuplicateJob(normalized));
 
+  const cleanDescription = stripDiscoveryFromDescription(normalized.description);
+
   if (existing) {
+    const description = cleanDescription.length >= existing.description.length ? cleanDescription : existing.description;
     const job = await prisma.jobPosting.update({
       where: { id: existing.id },
       data: {
@@ -496,14 +739,14 @@ async function upsertDedupedJob(normalized: NormalizedJobPosting, sourceId: stri
         sourceJobId: normalized.sourceJobId,
         company: normalized.company,
         title: normalized.title,
-        location: normalized.location,
-        country: normalized.country,
-        city: normalized.city,
-        remoteType: normalized.remoteType,
-        salaryMin: normalized.salaryMin,
-        salaryMax: normalized.salaryMax,
-        salaryCurrency: normalized.salaryCurrency,
-        description: normalized.description,
+        location: normalized.location || existing.location,
+        country: normalized.country ?? existing.country,
+        city: normalized.city ?? existing.city,
+        remoteType: normalized.remoteType !== "unknown" ? normalized.remoteType : existing.remoteType,
+        salaryMin: normalized.salaryMin ?? existing.salaryMin,
+        salaryMax: normalized.salaryMax ?? existing.salaryMax,
+        salaryCurrency: normalized.salaryCurrency ?? existing.salaryCurrency,
+        description,
         requirements: normalized.requirements,
         niceToHaves: normalized.niceToHaves,
         benefits: normalized.benefits,
@@ -529,7 +772,7 @@ async function upsertDedupedJob(normalized: NormalizedJobPosting, sourceId: stri
       salaryMin: normalized.salaryMin,
       salaryMax: normalized.salaryMax,
       salaryCurrency: normalized.salaryCurrency,
-      description: normalized.description,
+      description: cleanDescription,
       requirements: normalized.requirements,
       niceToHaves: normalized.niceToHaves,
       benefits: normalized.benefits,

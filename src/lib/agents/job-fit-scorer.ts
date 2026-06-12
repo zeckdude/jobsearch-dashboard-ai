@@ -58,7 +58,6 @@ export async function runJobFitScoringAgent(input: JobFitScoringInput) {
         : [];
       const draft = buildJobEvaluation({ job, profile, evidence, learningRules: input.learningRules });
       const evaluation = await persistJobEvaluation(job.id, profile.id, draft);
-      await persistCompatibleMatch(job.id, profile.id, draft);
 
       return {
         evaluationId: evaluation.id,
@@ -144,55 +143,6 @@ async function persistJobEvaluation(jobPostingId: string, jobSearchProfileId: st
       jobPostingId,
       jobSearchProfileId,
       ...data,
-    },
-  });
-}
-
-async function persistCompatibleMatch(jobPostingId: string, jobSearchProfileId: string, draft: EvaluationDraft) {
-  const existing = await prisma.jobProfileMatch.findUnique({
-    where: {
-      jobPostingId_jobSearchProfileId: {
-        jobPostingId,
-        jobSearchProfileId,
-      },
-    },
-  });
-
-  return prisma.jobProfileMatch.upsert({
-    where: {
-      jobPostingId_jobSearchProfileId: {
-        jobPostingId,
-        jobSearchProfileId,
-      },
-    },
-    update: {
-      overallScore: draft.fitScore,
-      skillFit: draft.fitScore,
-      compensationFit: draft.opportunityScore,
-      strongestMatches: draft.strengths as Prisma.InputJsonValue,
-      concerns: draft.risks as Prisma.InputJsonValue,
-      missingKeywords: draft.missingKeywords as Prisma.InputJsonValue,
-      recommendedAction: humanRecommendedAction(draft.recommendedAction),
-      aiExplanation: draft.explanation,
-      status: existing?.status ?? "needs_review",
-    },
-    create: {
-      jobPostingId,
-      jobSearchProfileId,
-      status: "needs_review",
-      overallScore: draft.fitScore,
-      titleFit: draft.fitScore,
-      skillFit: draft.fitScore,
-      seniorityFit: draft.fitScore,
-      industryFit: draft.fitScore,
-      compensationFit: draft.opportunityScore,
-      remoteFit: draft.opportunityScore,
-      relocationFit: draft.opportunityScore,
-      strongestMatches: draft.strengths as Prisma.InputJsonValue,
-      concerns: draft.risks as Prisma.InputJsonValue,
-      missingKeywords: draft.missingKeywords as Prisma.InputJsonValue,
-      recommendedAction: humanRecommendedAction(draft.recommendedAction),
-      aiExplanation: draft.explanation,
     },
   });
 }

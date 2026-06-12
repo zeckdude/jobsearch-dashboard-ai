@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from "react";
 type ActionButtonProps = {
   children: React.ReactNode;
   href?: string;
+  target?: string;
   postTo?: string;
   body?: unknown;
   message?: string;
@@ -24,11 +25,13 @@ type ActionButtonProps = {
   runInBackground?: boolean;
   loadingLabel?: string;
   sx?: SxProps<Theme>;
+  onSuccess?: () => void;
 };
 
 export function ActionButton({
   children,
   href,
+  target,
   postTo,
   body,
   message,
@@ -41,6 +44,7 @@ export function ActionButton({
   runInBackground = false,
   loadingLabel = "Working...",
   sx,
+  onSuccess,
 }: ActionButtonProps) {
   const { refresh } = useRouter();
   const [notice, setNotice] = useState("");
@@ -55,6 +59,14 @@ export function ActionButton({
   }, []);
 
   if (href) {
+    const isExternal = target === "_blank" || href.startsWith("http://") || href.startsWith("https://");
+    if (isExternal || target) {
+      return (
+        <Button component="a" href={href} target={target ?? "_blank"} rel="noreferrer" variant={variant} color={color} size={size} startIcon={startIcon} endIcon={endIcon} sx={sx}>
+          {children}
+        </Button>
+      );
+    }
     return (
       <Button component={Link} href={href} variant={variant} color={color} size={size} startIcon={startIcon} endIcon={endIcon} sx={sx}>
         {children}
@@ -109,6 +121,7 @@ export function ActionButton({
       if (!response.ok) throw new Error(payload.error ?? "Action failed.");
       setSeverity("success");
       setNotice(message ?? payload.message ?? "Action completed.");
+      onSuccess?.();
       refresh();
     } catch (error) {
       setSeverity("error");

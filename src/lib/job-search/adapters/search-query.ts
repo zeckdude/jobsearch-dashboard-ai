@@ -1,4 +1,5 @@
 import type { JobSearchProfile, JobSource } from "@prisma/client";
+import { CANONICAL_SOURCE_NAMES } from "@/lib/job-search/source-display";
 import { searchQueryTemplates } from "@/lib/job-search/source-catalog";
 import type { JobSourceAdapter, NormalizedJobPosting, RawJobPosting } from "@/lib/job-search/source-adapter";
 
@@ -19,7 +20,7 @@ type BraveSearchResponse = {
 const searchTimeoutMs = 10_000;
 
 export const searchQueryAdapter: JobSourceAdapter = {
-  name: "Search Query Backlog",
+  name: CANONICAL_SOURCE_NAMES.searchQuery,
   async fetchJobs(profile: JobSearchProfile, source: JobSource) {
     const apiKey = process.env.BRAVE_SEARCH_API_KEY;
     if (!apiKey) return [];
@@ -80,9 +81,9 @@ function jobFromSearchResult(result: BraveSearchResult, query: string, profile: 
     company: result.profile?.name ?? companyFromUrl(url),
     title: cleanTitle(result.title ?? "Search result"),
     location: locationFromQuery(query),
-    description: [result.description, `Matched query: ${query}`, profile.name ? `Profile: ${profile.name}` : ""].filter(Boolean).join("\n\n"),
+    description: result.description ?? "",
     applicationUrl: url,
-    rawData: { provider: "brave", query, result },
+    rawData: { provider: "brave", query, profileName: profile.name, result },
   };
 }
 

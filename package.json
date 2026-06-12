@@ -17,6 +17,7 @@
     "db:logs": "docker compose logs -f postgres",
     "db:reset": "prisma migrate reset",
     "db:reset-jobs": "tsx scripts/reset-job-data.ts",
+    "db:rescore": "tsx scripts/rescore-matches.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",

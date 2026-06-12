@@ -24,6 +24,7 @@ import { AppShell } from "@/app/app-shell";
 import { ActionButton } from "@/components/action-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
+import { ProfileLink } from "@/components/profile-link";
 import { ScoreChip } from "@/components/ui/score-chip";
 import { StatusChip, formatStatus } from "@/components/ui/status-chip";
 import { prisma } from "@/lib/prisma";
@@ -236,7 +237,7 @@ export default async function OutcomeAnalyticsPage() {
           empty="Run outcome analysis to calculate profile performance."
           headers={["Profile", "Apps", "Applied", "Callbacks", "Avg score", "Confidence", "Recommendation"]}
           rows={(output?.profilePerformance ?? []).map((profile) => [
-            profile.profileName,
+            <ProfileLink key="profile" profileId={profile.profileId} name={profile.profileName} />,
             profile.applications,
             profile.applied,
             `${profile.callbackRate}%`,

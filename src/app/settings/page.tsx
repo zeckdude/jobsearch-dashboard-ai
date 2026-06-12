@@ -18,6 +18,8 @@ import { PageHeader } from "@/components/ui/page-header";
 import { getLearningImpact } from "@/lib/observability/learning-impact";
 import { getOutcomeCalibration, getOutcomeCalibrationTrends, getOutcomeRegressionTriage } from "@/lib/observability/outcome-calibration";
 import { getLearningRollbackAudit } from "@/lib/observability/rollback-audit";
+import { CANONICAL_SOURCE_NAMES } from "@/lib/job-search/source-display";
+import { renameLegacyJobSourceNames } from "@/lib/job-search/source-records";
 import { prisma } from "@/lib/prisma";
 import { FieldMemoryDisableButton } from "./field-memory-disable-button";
 import { SettingsClient } from "./settings-client";
@@ -26,6 +28,7 @@ import type { ServiceHealthSettings, ServiceStatus } from "./service-health-pane
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage({ searchParams }: { searchParams?: { highlight?: string } }) {
+  await renameLegacyJobSourceNames(prisma);
   const user = await prisma.user.findFirst({
     include: { automationSettings: true, notificationSettings: true, profile: { include: { githubRepositories: true } } },
     orderBy: { createdAt: "asc" },
@@ -57,7 +60,7 @@ export default async function SettingsPage({ searchParams }: { searchParams?: { 
       })
     : [];
   const companySource = await prisma.jobSource.findUnique({
-    where: { type_name: { type: "company_site", name: "Company Source List" } },
+    where: { type_name: { type: "company_site", name: CANONICAL_SOURCE_NAMES.companySite } },
   });
   const companySourceConfig = companySource?.config as { companies?: unknown[]; priorityMax?: number; maxCompanies?: number; maxFetch?: number } | undefined;
   const settings = user?.notificationSettings;
@@ -1290,6 +1293,7 @@ const SETTINGS_SECTIONS = [
   { href: "#settings-email-sync", label: "Email sync" },
   { href: "#settings-notifications", label: "Notifications" },
   { href: "#settings-workflow-reminders", label: "Workflow reminders" },
+  { href: "#settings-search-defaults", label: "Search defaults" },
   { href: "#settings-cron", label: "Scheduled search" },
   { href: "#settings-automation", label: "Automation" },
   { href: "#settings-company-sources", label: "Company sources" },

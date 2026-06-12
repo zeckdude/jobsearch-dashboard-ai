@@ -1,5 +1,12 @@
 import type { Prisma } from "@prisma/client";
-import { companySourceDownrankTerms, companySources, companySourceSearchTags, createCompanySource, type CompanySource } from "@/lib/job-search/company-sources";
+import {
+  companySourceDownrankTerms,
+  companySources,
+  companySourceSearchTags,
+  createCompanySource,
+  isCompanySourceEnabled,
+  type CompanySource,
+} from "@/lib/job-search/company-sources";
 
 export type CompanySourceConfig = {
   qualityTier: string;
@@ -57,6 +64,28 @@ export type CompanySourceInput = {
   ashbySlugs?: string[];
 };
 
+export function setCompanySourceEnabled(
+  config: CompanySourceConfig,
+  name: string,
+  enabled: boolean,
+): CompanySourceConfig {
+  const match = findCompanyIndex(config, name);
+  if (match < 0) throw new Error(`${name} is not in the company source list.`);
+  const companies = config.companies.map((company, index) => (
+    index === match ? { ...company, enabled } : company
+  ));
+  return { ...config, companies };
+}
+
+export function removeCompanySource(config: CompanySourceConfig, name: string): CompanySourceConfig {
+  const match = findCompanyIndex(config, name);
+  if (match < 0) throw new Error(`${name} is not in the company source list.`);
+  return {
+    ...config,
+    companies: config.companies.filter((_, index) => index !== match),
+  };
+}
+
 export function addCompanySourceToConfig(config: CompanySourceConfig, input: CompanySourceInput): CompanySourceConfig {
   const name = input.name.trim();
   if (!name) throw new Error("Company name is required.");
@@ -90,7 +119,17 @@ function isCompanySource(value: unknown): value is CompanySource {
     && (source.priority === 1 || source.priority === 2 || source.priority === 3)
     && Array.isArray(source.searchTerms)
     && source.searchTerms.every((item) => typeof item === "string")
-    && typeof source.careersQuery === "string";
+    && typeof source.careersQuery === "string"
+    && (source.enabled === undefined || typeof source.enabled === "boolean");
+}
+
+function findCompanyIndex(config: CompanySourceConfig, name: string) {
+  const normalized = name.trim().toLowerCase();
+  return config.companies.findIndex((company) => company.name.toLowerCase() === normalized);
+}
+
+export function activeCompanySources(companies: CompanySource[]) {
+  return companies.filter(isCompanySourceEnabled);
 }
 
 function objectValue(value: unknown): Record<string, unknown> {

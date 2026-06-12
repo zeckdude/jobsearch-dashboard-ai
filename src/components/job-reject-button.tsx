@@ -3,6 +3,8 @@
 import DoNotDisturbOnOutlinedIcon from "@mui/icons-material/DoNotDisturbOnOutlined";
 import Alert from "@mui/material/Alert";
 import Button from "@mui/material/Button";
+import IconButton from "@mui/material/IconButton";
+import Tooltip from "@mui/material/Tooltip";
 import Chip from "@mui/material/Chip";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
@@ -12,31 +14,16 @@ import Snackbar from "@mui/material/Snackbar";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+import { rejectionReasonCodes, rejectionReasonLabels, type RejectionReasonCode } from "@/lib/jobs/rejection-learning";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-export type RejectionReasonCode =
-  | "wrong_seniority"
-  | "wrong_tech_stack"
-  | "compensation_location"
-  | "company_industry"
-  | "weak_fit"
-  | "already_applied_duplicate"
-  | "duplicate_stale"
-  | "low_quality_posting"
-  | "not_interested";
+export type { RejectionReasonCode } from "@/lib/jobs/rejection-learning";
 
-const rejectionReasons: Array<{ code: RejectionReasonCode; label: string }> = [
-  { code: "wrong_seniority", label: "Wrong seniority" },
-  { code: "wrong_tech_stack", label: "Wrong tech stack" },
-  { code: "compensation_location", label: "Comp/location" },
-  { code: "company_industry", label: "Company/industry" },
-  { code: "weak_fit", label: "Weak fit" },
-  { code: "already_applied_duplicate", label: "Already applied/dupe" },
-  { code: "duplicate_stale", label: "Duplicate/stale" },
-  { code: "low_quality_posting", label: "Low quality" },
-  { code: "not_interested", label: "Not interested" },
-];
+const rejectionReasons = rejectionReasonCodes.map((code) => ({
+  code,
+  label: rejectionReasonLabels[code],
+}));
 
 export function JobRejectButton({
   jobId,
@@ -46,6 +33,8 @@ export function JobRejectButton({
   variant = "text",
   color = "error",
   source = "job_reject_button",
+  compact = false,
+  onSuccess,
 }: {
   jobId: string;
   matchId: string;
@@ -54,6 +43,8 @@ export function JobRejectButton({
   variant?: "text" | "outlined" | "contained";
   color?: "primary" | "secondary" | "success" | "error" | "warning" | "info";
   source?: string;
+  compact?: boolean;
+  onSuccess?: () => void;
 }) {
   const { refresh } = useRouter();
   const [loading, setLoading] = useState(false);
@@ -74,6 +65,7 @@ export function JobRejectButton({
       setSeverity("success");
       setNotice(reasons.length || note.trim() ? "Job rejected and feedback saved for agent learning." : "Job rejected.");
       setPromptOpen(false);
+      onSuccess?.();
       refresh();
     } catch (error) {
       setSeverity("error");
@@ -87,11 +79,23 @@ export function JobRejectButton({
     await reject(reasons, note);
   }
 
+  const trigger = compact ? (
+    <Tooltip title={loading ? "Rejecting..." : "Reject"}>
+      <span>
+        <IconButton size="small" color="error" disabled={loading} onClick={() => setPromptOpen(true)} aria-label="Reject job">
+          <DoNotDisturbOnOutlinedIcon fontSize="small" />
+        </IconButton>
+      </span>
+    </Tooltip>
+  ) : (
+    <Button size={size} variant={variant} color={color} startIcon={<DoNotDisturbOnOutlinedIcon />} disabled={loading} onClick={() => setPromptOpen(true)}>
+      {loading ? "Rejecting..." : "Reject"}
+    </Button>
+  );
+
   return (
     <>
-      <Button size={size} variant={variant} color={color} startIcon={<DoNotDisturbOnOutlinedIcon />} disabled={loading} onClick={() => setPromptOpen(true)}>
-        {loading ? "Rejecting..." : "Reject"}
-      </Button>
+      {trigger}
       <RejectionReasonDialog
         open={promptOpen}
         title={`Why reject ${label}?`}

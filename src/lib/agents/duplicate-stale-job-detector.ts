@@ -2,7 +2,9 @@ import crypto from "crypto";
 import type { JobPosting, Prisma } from "@prisma/client";
 import { runAgent } from "@/lib/agents/run-agent";
 import { createCanonicalJobKeys } from "@/lib/job-search/dedupe";
+import { checkJobApplicationUrl, staleScoreForUrlHealth } from "@/lib/job-search/url-health";
 import { jsonArray } from "@/lib/json";
+import { loadFavoritedJobIds } from "@/lib/jobs/favorites";
 import { prisma } from "@/lib/prisma";
 import type { QualityProposalLearningRules } from "@/lib/skills/adjustments";
 
@@ -49,6 +51,7 @@ export async function runDuplicateStaleJobDetectorAgent(input: DuplicateStaleJob
       const jobs = await loadJobsForDetection(input);
       const output = buildDuplicateStaleDetection(jobs, new Date(), input.learningRules);
       await persistDuplicateStaleDetection(output, jobs);
+      await checkJobUrls(jobs, input.userId);
       return output;
     },
   });
@@ -252,4 +255,43 @@ function objectValue(value: Prisma.JsonValue) {
 
 function normalizeLoose(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+async function checkJobUrls(jobs: JobForDetection[], userId?: string) {
+  const candidates = jobs.filter((job) => job.applicationUrl);
+  if (candidates.length === 0) return;
+
+  const batchSize = 5;
+  const updates: Array<{ id: string; staleScore: number }> = [];
+
+  for (let i = 0; i < candidates.length; i += batchSize) {
+    const batch = candidates.slice(i, i + batchSize);
+    const results = await Promise.all(
+      batch.map(async (job) => {
+        const result = await checkJobApplicationUrl(job.applicationUrl!);
+        return { job, result };
+      }),
+    );
+
+    for (const { job, result } of results) {
+      const newScore = staleScoreForUrlHealth(result.status, job.staleScore);
+      if (newScore !== job.staleScore) updates.push({ id: job.id, staleScore: newScore });
+    }
+  }
+
+  if (updates.length === 0) return;
+  await prisma.$transaction(
+    updates.map(({ id, staleScore }) => prisma.jobPosting.update({ where: { id }, data: { staleScore } })),
+  );
+
+  const staleJobIds = updates.filter((u) => u.staleScore >= 75).map((u) => u.id);
+  if (staleJobIds.length === 0) return;
+
+  const favoritedJobIds = userId ? await loadFavoritedJobIds(userId) : new Set<string>();
+  const deletableStaleJobIds = staleJobIds.filter((id) => !favoritedJobIds.has(id));
+  if (deletableStaleJobIds.length === 0) return;
+
+  await prisma.jobProfileMatch.deleteMany({
+    where: { jobPostingId: { in: deletableStaleJobIds }, status: "needs_review" },
+  });
 }

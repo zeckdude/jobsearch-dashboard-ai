@@ -2,6 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
+import { SearchDefaultsSettings } from "./search-defaults-settings";
 import { ServiceHealthPanel } from "./service-health-panel";
 import type { ServiceHealthSettings } from "./service-health-panel";
 import NotificationsActiveOutlinedIcon from "@mui/icons-material/NotificationsActiveOutlined";
@@ -417,7 +418,7 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
             <Box>
               <Typography variant="h3">Admin and supporting tools</Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                These pages support the agent workflow but no longer need to be in the primary navigation.
+                Quick links to supporting pages. Most of these also live in the grouped sidebar navigation.
               </Typography>
             </Box>
             <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
@@ -653,7 +654,7 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
             <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between" }}>
               <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
                 <SourceOutlinedIcon color="primary" />
-                <Typography variant="h3">Company source list</Typography>
+                <Typography variant="h3">Company watchlist</Typography>
               </Stack>
               <StatusChip status={sourceSettings.companySourceEnabled ? "configured" : "provider_missing"} />
             </Stack>
@@ -669,7 +670,7 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
               <TextField fullWidth label="Max fetched roles" value={sourceSettings.maxFetch} disabled />
             </Box>
             <Typography variant="body2" color="text.secondary">
-              This is a source list, not a claim that every company is currently hiring. The app checks careers/ATS feeds and then scores matching roles against your profiles.
+              This is a target watchlist, not a claim that every company is currently hiring. The app checks careers/ATS feeds and then scores matching roles against your profiles.
             </Typography>
             <Button component={Link} href="/sources" variant="outlined" sx={{ alignSelf: "flex-start" }}>
               Manage company sources
@@ -677,6 +678,8 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
           </Stack>
         </CardContent>
       </Card>
+
+      <SearchDefaultsSettings />
 
       <Card id="settings-cron">
         <CardContent>

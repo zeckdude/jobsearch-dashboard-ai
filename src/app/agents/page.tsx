@@ -25,6 +25,7 @@ import TableRow from "@mui/material/TableRow";
 import Typography from "@mui/material/Typography";
 import { AppShell } from "@/app/app-shell";
 import { ActionButton } from "@/components/action-button";
+import { ProfileLink } from "@/components/profile-link";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { ScoreChip } from "@/components/ui/score-chip";
@@ -45,7 +46,7 @@ type AgentOutput = {
   reasoningSummary?: string;
   rationale?: string;
   warnings?: string[];
-  recommendedChanges?: Array<{ action?: string; summary?: string; profileName?: string }>;
+  recommendedChanges?: Array<{ profileId?: string; action?: string; summary?: string; profileName?: string }>;
   profileHealthScores?: Array<{ name?: string; healthScore?: number; rationale?: string }>;
   recommendedAction?: string;
   fitScore?: number;
@@ -316,7 +317,7 @@ export default async function AgentReviewBoardPage() {
                       {(latestProfileOutput.recommendedChanges ?? []).slice(0, 5).map((change) => (
                         <Box key={`${change.profileName ?? "profile"}-${change.action ?? "review"}-${change.summary ?? ""}`} sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.25 }}>
                           <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", alignItems: "center" }}>
-                            <Typography variant="body2" sx={{ fontWeight: 850 }}>{change.profileName ?? "Profile"}</Typography>
+                            <ProfileLink profileId={change.profileId} name={change.profileName ?? "Profile"} />
                             <Chip size="small" variant="outlined" label={change.action ?? "review"} />
                           </Stack>
                           <Typography variant="caption" color="text.secondary">{change.summary}</Typography>
