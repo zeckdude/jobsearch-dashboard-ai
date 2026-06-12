@@ -43,6 +43,7 @@ export const searchQueryAdapter: JobSourceAdapter = {
     return dedupeByUrl(results).slice(0, maxFetch);
   },
   async normalize(raw: RawJobPosting): Promise<NormalizedJobPosting> {
+    const applicationUrl = await resolveApplicationUrl(raw.applicationUrl);
     const haystack = `${raw.title} ${raw.location ?? ""} ${raw.description}`;
     return {
       sourceJobId: raw.sourceJobId,
@@ -54,9 +55,18 @@ export const searchQueryAdapter: JobSourceAdapter = {
       requirements: [],
       niceToHaves: [],
       benefits: [],
-      applicationUrl: raw.applicationUrl,
-      atsProvider: atsProviderFromUrl(raw.applicationUrl),
-      rawData: raw.rawData ?? raw,
+      applicationUrl,
+      atsProvider: atsProviderFromUrl(applicationUrl),
+      rawData: {
+        ...(isRecord(raw.rawData) ? raw.rawData : { raw }),
+        ...(applicationUrl !== raw.applicationUrl ? {
+          resolvedApplicationUrl: {
+            source: "job_detail_page",
+            originalUrl: raw.applicationUrl,
+            applicationUrl,
+          },
+        } : {}),
+      },
     };
   },
 };
@@ -511,6 +521,68 @@ function isBuiltInJobUrl(value: string) {
     return url.hostname.replace(/^www\./, "") === "builtin.com" && url.pathname.startsWith("/job/");
   } catch {
     return false;
+  }
+}
+
+async function resolveApplicationUrl(value?: string) {
+  if (!value) return value;
+  if (isBuiltInJobUrl(value)) {
+    const resolved = await resolveBuiltInJobApplicationUrl(value);
+    return canonicalApplicationUrl(resolved ?? value);
+  }
+  return canonicalApplicationUrl(value);
+}
+
+async function resolveBuiltInJobApplicationUrl(jobUrl: string) {
+  try {
+    const response = await fetch(jobUrl, {
+      headers: {
+        Accept: "text/html",
+        "User-Agent": "JobSearchOS/1.0",
+      },
+      signal: AbortSignal.timeout(searchTimeoutMs),
+    });
+    if (!response.ok) return undefined;
+    const html = await response.text();
+    if (isBlockedListingHtml(html)) return undefined;
+    return extractBuiltInHowToApplyUrl(html, jobUrl);
+  } catch {
+    return undefined;
+  }
+}
+
+export function extractBuiltInHowToApplyUrl(html: string, baseUrl: string) {
+  const initJson = firstMatch(html, /Builtin\.jobPostInit\((\{[\s\S]*?\})\);/);
+  const initPayload = initJson ? parseJson(decodeHtmlEntities(initJson)) : null;
+  if (isRecord(initPayload) && isRecord(initPayload.job)) {
+    const howToApply = stringValue(initPayload.job.howToApply);
+    const resolved = absoluteUrl(howToApply, baseUrl);
+    if (resolved) return resolved;
+  }
+
+  const externalApplyAnchor = firstMatch(html, /<a\b[^>]*href=["']([^"']+)["'][^>]*>\s*(?:Apply|Apply Now|View Job|Continue)/i);
+  const resolvedAnchor = absoluteUrl(externalApplyAnchor ? decodeHtmlEntities(externalApplyAnchor) : undefined, baseUrl);
+  if (resolvedAnchor && !isBuiltInJobUrl(resolvedAnchor)) return resolvedAnchor;
+
+  const atsUrl = firstMatch(html, /https:\/\/(?:jobs\.ashbyhq\.com|jobs\.lever\.co|boards\.greenhouse\.io|job-boards\.greenhouse\.io)\/[^"' <)]+/i);
+  return absoluteUrl(atsUrl, baseUrl);
+}
+
+function canonicalApplicationUrl(value?: string) {
+  if (!value) return value;
+  try {
+    const url = new URL(value);
+    if (url.hostname.replace(/^www\./, "") === "jobs.ashbyhq.com") {
+      url.search = "";
+      url.hash = "";
+      const path = url.pathname.replace(/\/+$/, "");
+      if (!path.endsWith("/application") && path.split("/").filter(Boolean).length >= 2) {
+        url.pathname = `${path}/application`;
+      }
+    }
+    return url.toString();
+  } catch {
+    return value;
   }
 }
 
