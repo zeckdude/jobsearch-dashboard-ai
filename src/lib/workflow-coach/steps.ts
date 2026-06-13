@@ -44,19 +44,18 @@ export const SETUP_STEPS: SetupStep[] = [
     key: "setup-resume",
     label: "Upload your resume",
     description: "Upload a resume file so the system can parse your work history and build your evidence library.",
-    route: "/resumes/upload",
+    route: "/resume",
     timing: "setup",
     timeEstimateMin: 2,
     hints: [
-      { target: "resume-upload-zone", instruction: "Drag your resume PDF or Word file here, or click to browse and select your file.", confirmType: "observe", confirmLabel: "I've selected my file" },
-      { target: "resume-upload-submit", instruction: "Click the Upload button to send the file for parsing. The system will extract your work history automatically.", confirmType: "click" },
+      { target: "resume-import-btn", instruction: "Click Import from PDF to upload your resume file, or enter your work history manually below.", confirmType: "observe", confirmLabel: "I've started my resume" },
     ],
   },
   {
     key: "setup-profile",
     label: "Fill in your candidate profile",
     description: "Add your LinkedIn URL, master summary, and core skills so materials can be tailored to you.",
-    route: "/resumes/profile",
+    route: "/resume",
     timing: "setup",
     timeEstimateMin: 5,
     hints: [

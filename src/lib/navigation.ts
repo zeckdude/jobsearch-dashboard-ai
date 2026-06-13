@@ -1,14 +1,16 @@
 import type { SvgIconComponent } from "@mui/icons-material";
+import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
 import AssignmentTurnedInOutlinedIcon from "@mui/icons-material/AssignmentTurnedInOutlined";
 import AutoFixHighOutlinedIcon from "@mui/icons-material/AutoFixHighOutlined";
+import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import BarChartOutlinedIcon from "@mui/icons-material/BarChartOutlined";
 import BoltOutlinedIcon from "@mui/icons-material/BoltOutlined";
 import ChecklistRtlOutlinedIcon from "@mui/icons-material/ChecklistRtlOutlined";
 import ConnectWithoutContactOutlinedIcon from "@mui/icons-material/ConnectWithoutContactOutlined";
+import ContactPageOutlinedIcon from "@mui/icons-material/ContactPageOutlined";
 import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
-import GradingOutlinedIcon from "@mui/icons-material/GradingOutlined";
 import HistoryOutlinedIcon from "@mui/icons-material/HistoryOutlined";
 import ManageSearchOutlinedIcon from "@mui/icons-material/ManageSearchOutlined";
 import MarkChatUnreadOutlinedIcon from "@mui/icons-material/MarkChatUnreadOutlined";
@@ -46,8 +48,8 @@ export function isNavItemActive(pathname: string, item: NavItem) {
   switch (item.href) {
     case "/applications":
       return /^\/applications\/(?!assistant|field-learning)[^/]+/.test(pathname);
-    case "/resumes":
-      return pathname.startsWith("/resumes/") && !pathname.startsWith("/resumes/generated");
+    case "/resume":
+      return pathname === "/resume";
     case "/dashboard":
     case "/needs-me":
     case "/daily-workflow":
@@ -120,8 +122,25 @@ export const navSections: NavSection[] = [
     eyebrow: "Build your packet",
     icon: DescriptionOutlinedIcon,
     items: [
-      { href: "/resumes", label: "Materials", eyebrow: "Resume workspace", icon: DescriptionOutlinedIcon },
-      { href: "/resumes/generated", label: "Generated", eyebrow: "Resumes & letters", icon: GradingOutlinedIcon },
+      { href: "/resume", label: "Resume", eyebrow: "Edit & preview", icon: DescriptionOutlinedIcon },
+      {
+        href: "/resumes/generated",
+        label: "Generated",
+        eyebrow: "Per-job materials",
+        icon: ArticleOutlinedIcon,
+      },
+      {
+        href: "/resumes/custom-opportunity",
+        label: "Custom Opportunity",
+        eyebrow: "Recruiter brief",
+        icon: ContactPageOutlinedIcon,
+      },
+      {
+        href: "/resumes/variants",
+        label: "Variants",
+        eyebrow: "Positioning profiles",
+        icon: AutoAwesomeOutlinedIcon,
+      },
       { href: "/evidence", label: "Evidence", eyebrow: "Verified facts", icon: FactCheckOutlinedIcon },
     ],
   },

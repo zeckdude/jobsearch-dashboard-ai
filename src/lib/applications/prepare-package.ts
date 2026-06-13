@@ -42,10 +42,9 @@ export async function prepareApplicationPackage(jobId: string) {
   const match = job.matches[0];
   let resume = job.resumes[0] ?? null;
   let coverLetter = job.coverLetters[0] ?? null;
-  const latestUploadId = user.profile.resumeUploads[0]?.id;
-  const sourceBullets = selectResumeSourceBullets(user.profile.experienceBullets, latestUploadId);
-  const sourceMaterialSummary = summarizeResumeSourceBullets(sourceBullets, latestUploadId);
   const parsedUpload = user.profile.resumeUploads[0]?.parsedJson as { education?: string[]; certifications?: string[] } | undefined;
+  const sourceBullets = selectResumeSourceBullets(user.profile.experienceBullets);
+  const sourceMaterialSummary = summarizeResumeSourceBullets(sourceBullets);
   const strategy = await createResumeStrategy({
     jobPostingId: job.id,
     jobSearchProfileId: match.jobSearchProfileId,
@@ -59,7 +58,7 @@ export async function prepareApplicationPackage(jobId: string) {
       job,
       bullets: sourceBullets,
       projects: user.profile.projects,
-      workExperiences: selectResumeSourceWorkExperiences(user.profile.workExperiences, latestUploadId),
+      workExperiences: selectResumeSourceWorkExperiences(user.profile.workExperiences),
       githubRepositories: user.profile.githubRepositories,
       education: Array.isArray(parsedUpload?.education) ? parsedUpload.education : [],
       certifications: Array.isArray(parsedUpload?.certifications) ? parsedUpload.certifications : [],

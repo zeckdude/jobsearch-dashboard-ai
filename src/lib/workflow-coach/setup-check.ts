@@ -15,7 +15,7 @@ export type SetupStatus = {
 export async function runSetupCheck(userId: string): Promise<SetupStatus> {
   const [resumeUpload, userProfile, searchProfiles, jobSources] = await Promise.all([
     prisma.resumeUpload.findFirst({
-      where: { userId, parsingStatus: { notIn: ["pending", "failed"] } },
+      where: { userId, parsingStatus: "approved" },
       select: { id: true },
     }),
     prisma.userProfile.findFirst({

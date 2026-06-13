@@ -1008,7 +1008,7 @@ function getSettingsNextAction(input: SettingsNextActionInput) {
       title: "Create the base user profile",
       detail: "Settings depend on the first local user record. Add or import a profile before tuning automation.",
       label: "Open profile",
-      href: "/resumes/profile",
+      href: "/resume",
       color: "warning" as const,
       icon: <SettingsSuggestOutlinedIcon />,
       scope: "required",

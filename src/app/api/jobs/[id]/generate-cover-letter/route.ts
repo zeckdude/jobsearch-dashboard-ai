@@ -43,9 +43,8 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
       jobSearchProfileId: match.jobSearchProfileId,
       userId: user.id,
     });
-    const latestUploadId = user.profile.resumeUploads[0]?.id;
-    const sourceBullets = selectResumeSourceBullets(user.profile.experienceBullets, latestUploadId);
-    const sourceMaterialSummary = summarizeResumeSourceBullets(sourceBullets, latestUploadId);
+    const sourceBullets = selectResumeSourceBullets(user.profile.experienceBullets);
+    const sourceMaterialSummary = summarizeResumeSourceBullets(sourceBullets);
     const writingGuidance = await activeApplicationMaterialGuidance(user.id);
     const generated = await generateCoverLetterForJob({
       userProfile: user.profile,

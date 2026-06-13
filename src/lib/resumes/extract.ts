@@ -1,4 +1,6 @@
 import mammoth from "mammoth";
+import { cleanupExtractedResumeText } from "@/lib/resumes/extract-cleanup";
+import { normalizePdfLigatures } from "@/lib/resumes/pdf-ligatures";
 
 export async function extractResumeText(file: File) {
   const buffer = Buffer.from(await file.arrayBuffer());
@@ -13,16 +15,16 @@ export async function extractResumeTextFromBuffer(buffer: Buffer, fileName: stri
   const normalizedFileType = fileType || inferFileType(normalizedFileName);
 
   if (normalizedFileName.endsWith(".txt") || normalizedFileName.endsWith(".md") || normalizedFileType.includes("text")) {
-    return buffer.toString("utf8");
+    return cleanupExtractedResumeText(buffer.toString("utf8"));
   }
 
   if (normalizedFileName.endsWith(".docx") || normalizedFileType.includes("wordprocessingml")) {
     const result = await mammoth.extractRawText({ buffer });
-    return result.value;
+    return cleanupExtractedResumeText(result.value);
   }
 
   if (normalizedFileName.endsWith(".pdf") || normalizedFileType.includes("pdf")) {
-    return extractPdfText(buffer);
+    return cleanupExtractedResumeText(await extractPdfText(buffer));
   }
 
   throw new Error("Unsupported resume file type. Upload PDF, DOCX, Markdown, or plain text.");
@@ -40,15 +42,39 @@ async function extractPdfText(buffer: Buffer) {
   for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
     const page = await document.getPage(pageNumber);
     const content = await page.getTextContent();
-    const pageText = content.items
-      .map((item) => ("str" in item ? item.str : ""))
-      .filter(Boolean)
-      .join("\n");
-    pages.push(pageText);
+    pages.push(assemblePdfPageText(content.items));
   }
 
   await document.destroy();
-  return pages.join("\n\n").trim();
+  return normalizePdfLigatures(pages.join("\n\n").trim());
+}
+
+type PdfTextItem = { str?: string; hasEOL?: boolean };
+
+function assemblePdfPageText(items: PdfTextItem[]) {
+  const lines: string[] = [];
+  let current = "";
+
+  for (const item of items) {
+    if (!("str" in item) || item.str === undefined) continue;
+
+    if (item.str === "") {
+      if (item.hasEOL && current.trim()) {
+        lines.push(current.trim());
+        current = "";
+      }
+      continue;
+    }
+
+    current = current ? `${current} ${item.str}` : item.str;
+    if (item.hasEOL) {
+      lines.push(current.trim());
+      current = "";
+    }
+  }
+
+  if (current.trim()) lines.push(current.trim());
+  return lines.join("\n");
 }
 
 function inferFileType(fileName: string) {

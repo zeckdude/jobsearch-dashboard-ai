@@ -571,6 +571,7 @@ model UserProfile {
   technicalSkills     Json                @default("[]")
   industries          Json                @default("[]")
   domainExpertise     Json                @default("[]")
+  resumePdfPreset     String              @default("atelier")
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
   candidateEvidence   CandidateEvidence[]

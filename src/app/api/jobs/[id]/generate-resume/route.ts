@@ -43,16 +43,15 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
       jobSearchProfileId: match.jobSearchProfileId,
       userId: user.id,
     });
-    const latestUploadId = user.profile.resumeUploads[0]?.id;
     const parsedUpload = user.profile.resumeUploads[0]?.parsedJson as { education?: string[]; certifications?: string[] } | undefined;
-    const bullets = selectResumeSourceBullets(user.profile.experienceBullets, latestUploadId);
-    const sourceMaterialSummary = summarizeResumeSourceBullets(bullets, latestUploadId);
+    const bullets = selectResumeSourceBullets(user.profile.experienceBullets);
+    const sourceMaterialSummary = summarizeResumeSourceBullets(bullets);
     const tailored = await tailorResumeForJob({
       userProfile: user.profile,
       job,
       bullets,
       projects: user.profile.projects,
-      workExperiences: selectResumeSourceWorkExperiences(user.profile.workExperiences, latestUploadId),
+      workExperiences: selectResumeSourceWorkExperiences(user.profile.workExperiences),
       githubRepositories: user.profile.githubRepositories,
       education: Array.isArray(parsedUpload?.education) ? parsedUpload.education : [],
       certifications: Array.isArray(parsedUpload?.certifications) ? parsedUpload.certifications : [],

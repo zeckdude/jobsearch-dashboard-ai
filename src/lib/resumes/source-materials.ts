@@ -1,44 +1,22 @@
 import type { ExperienceBullet, WorkExperience } from "@prisma/client";
 
-export function selectResumeSourceBullets<T extends Pick<ExperienceBullet, "id" | "text" | "sourceResumeUploadId" | "metrics">>(
-  bullets: T[],
-  latestUploadId: string | null | undefined,
-) {
-  const latestUploadBullets = latestUploadId
-    ? bullets.filter((bullet) => bullet.sourceResumeUploadId === latestUploadId)
-    : [];
-  const profileBullets = bullets.filter((bullet) => !bullet.sourceResumeUploadId);
-
-  if (latestUploadBullets.length >= 8) {
-    return dedupeBullets([...profileBullets, ...latestUploadBullets]);
-  }
-
+export function selectResumeSourceBullets<T extends Pick<ExperienceBullet, "text">>(bullets: T[]) {
   return dedupeBullets(bullets);
 }
 
-export function selectResumeSourceWorkExperiences<T extends Pick<WorkExperience, "sourceResumeUploadId">>(
-  workExperiences: T[],
-  latestUploadId: string | null | undefined,
-) {
-  return workExperiences.filter((work) => !latestUploadId || !work.sourceResumeUploadId || work.sourceResumeUploadId === latestUploadId);
+export function selectResumeSourceWorkExperiences<T extends Pick<WorkExperience, "company" | "title">>(workExperiences: T[]) {
+  return workExperiences;
 }
 
-export function summarizeResumeSourceBullets<T extends Pick<ExperienceBullet, "id" | "sourceResumeUploadId" | "metrics">>(
-  bullets: T[],
-  latestUploadId: string | null | undefined,
-) {
-  const profileBullets = bullets.filter((bullet) => !bullet.sourceResumeUploadId);
-  const latestUploadBullets = latestUploadId
-    ? bullets.filter((bullet) => bullet.sourceResumeUploadId === latestUploadId)
-    : [];
-  const roleDescriptionDigestBulletIds = profileBullets
+export function summarizeResumeSourceBullets<T extends Pick<ExperienceBullet, "id" | "metrics">>(bullets: T[]) {
+  const roleDescriptionDigestBulletIds = bullets
     .filter((bullet) => isRoleDescriptionDigestBullet(bullet))
     .map((bullet) => bullet.id);
 
   return {
     totalBulletCount: bullets.length,
-    profileBulletCount: profileBullets.length,
-    latestUploadBulletCount: latestUploadBullets.length,
+    profileBulletCount: bullets.length,
+    latestUploadBulletCount: 0,
     roleDescriptionDigestBulletIds,
   };
 }

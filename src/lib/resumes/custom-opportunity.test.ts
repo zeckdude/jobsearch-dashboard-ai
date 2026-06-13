@@ -3,7 +3,7 @@ import { runJobFitScoringAgent } from "@/lib/agents/job-fit-scorer";
 import { parseStructuredOutput } from "@/lib/ai/openai";
 import { tailorResumeForJob } from "@/lib/ai/resume";
 import { attachResumeQa, createResumeStrategy } from "@/lib/applications/material-agents";
-import { scoreJobForProfile } from "@/lib/job-search/scoring";
+import { evaluateJobAgainstProfile } from "@/lib/job-search/scoring";
 import { captureManualJob } from "@/lib/jobs/manual-capture";
 import { prisma } from "@/lib/prisma";
 import { checkAtsReadability } from "@/lib/resumes/ats";
@@ -27,7 +27,7 @@ vi.mock("@/lib/applications/material-agents", () => ({
 }));
 
 vi.mock("@/lib/job-search/scoring", () => ({
-  scoreJobForProfile: vi.fn(),
+  evaluateJobAgainstProfile: vi.fn(),
 }));
 
 vi.mock("@/lib/jobs/manual-capture", () => ({
@@ -38,7 +38,7 @@ vi.mock("@/lib/prisma", () => ({
   prisma: {
     generatedResume: { create: vi.fn(), update: vi.fn() },
     jobPosting: { findUnique: vi.fn() },
-    jobProfileMatch: { findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
+    jobProfileMatch: { findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn(), upsert: vi.fn() },
     jobSearchProfile: { findMany: vi.fn() },
     user: { findFirst: vi.fn() },
   },
@@ -51,7 +51,28 @@ vi.mock("@/lib/resumes/ats", () => ({
 const parseMock = vi.mocked(parseStructuredOutput);
 const captureManualJobMock = vi.mocked(captureManualJob);
 const runJobFitScoringAgentMock = vi.mocked(runJobFitScoringAgent);
-const scoreJobForProfileMock = vi.mocked(scoreJobForProfile);
+const evaluateJobAgainstProfileMock = vi.mocked(evaluateJobAgainstProfile);
+
+function mockEvaluation(overallScore: number) {
+  return {
+    tier: "full" as const,
+    overallScore,
+    titleFit: overallScore,
+    skillFit: overallScore,
+    seniorityFit: overallScore,
+    industryFit: overallScore,
+    compensationFit: overallScore,
+    remoteFit: overallScore,
+    relocationFit: overallScore,
+    strongestMatches: [],
+    concerns: [],
+    missingKeywords: [],
+    failedRequirements: [],
+    passedRequirements: [],
+    recommendedAction: "apply",
+    aiExplanation: "Mock evaluation.",
+  };
+}
 const tailorResumeForJobMock = vi.mocked(tailorResumeForJob);
 const createResumeStrategyMock = vi.mocked(createResumeStrategy);
 const attachResumeQaMock = vi.mocked(attachResumeQa);
@@ -211,11 +232,11 @@ describe("custom opportunity resumes", () => {
       { id: "profile_1", name: "Low", enabled: true },
       { id: "profile_2", name: "High", enabled: true },
     ] as Awaited<ReturnType<typeof prisma.jobSearchProfile.findMany>>);
-    scoreJobForProfileMock
-      .mockReturnValueOnce({ overallScore: 40 } as ReturnType<typeof scoreJobForProfile>)
-      .mockReturnValueOnce({ overallScore: 88 } as ReturnType<typeof scoreJobForProfile>);
+    evaluateJobAgainstProfileMock
+      .mockReturnValueOnce(mockEvaluation(40))
+      .mockReturnValueOnce(mockEvaluation(88));
     runJobFitScoringAgentMock.mockResolvedValue({ output: { evaluationId: "eval_1" } } as Awaited<ReturnType<typeof runJobFitScoringAgent>>);
-    vi.mocked(prisma.jobProfileMatch.findUnique).mockResolvedValue(match as Awaited<ReturnType<typeof prisma.jobProfileMatch.findUnique>>);
+    vi.mocked(prisma.jobProfileMatch.upsert).mockResolvedValue(match as Awaited<ReturnType<typeof prisma.jobProfileMatch.upsert>>);
     vi.mocked(prisma.jobPosting.findUnique).mockResolvedValue(job as Awaited<ReturnType<typeof prisma.jobPosting.findUnique>>);
     vi.mocked(prisma.user.findFirst).mockResolvedValue({
       id: "user_1",
@@ -254,7 +275,9 @@ describe("custom opportunity resumes", () => {
     expect(runJobFitScoringAgentMock).toHaveBeenCalledWith({
       jobPostingId: "job_1",
       jobSearchProfileId: "profile_2",
+      userId: "user_1",
     });
+    expect(prisma.jobProfileMatch.upsert).toHaveBeenCalled();
     expect(result).toMatchObject({
       resumeId: "resume_1",
       jobUrl: "/jobs/job_1",

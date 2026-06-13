@@ -23,7 +23,7 @@ const PAGES = [
   { name: "evidence", path: "/evidence" },
   { name: "profiles", path: "/profiles" },
   { name: "sources", path: "/sources" },
-  { name: "resumes", path: "/resumes" },
+  { name: "resume", path: "/resume" },
   { name: "settings", path: "/settings" },
 ];
 

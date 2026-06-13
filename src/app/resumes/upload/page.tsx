@@ -1,10 +1,5 @@
-import { ResumeUploadClient } from "./upload-client";
+import { redirect } from "next/navigation";
 
-export const metadata = {
-  title: "Upload Resume | Job Search OS",
-  description: "Upload source resumes for parsing and review.",
-};
-
-export default function ResumeUploadPage() {
-  return <ResumeUploadClient />;
+export default function ResumeUploadRedirectPage() {
+  redirect("/resume?import=1");
 }

@@ -558,23 +558,19 @@ The MCP server always runs as a local process on your machine. When your app is 
 
 Do these seven steps before your first job search. Each one builds on the last.
 
-### Step 1 — Upload your resume
+### Step 1 — Create or import your resume
 
-1. Click **Settings** in the left sidebar.
-2. Scroll down to the **Admin and supporting tools** card and click **Materials workspace** (`/resumes`).
-3. On the Materials workspace page, find the **Upload Resume** card and click **Open** (`/resumes/upload`).
-4. Select your resume PDF or Word file and upload it.
-5. The system will parse it into structured bullets and sections.
+1. Click **Resume** in the left sidebar (`/resume`), or open **Materials** (`/resumes`) and click **Edit resume**.
+2. Click **Import** to upload a resume file, a LinkedIn PDF, or a LinkedIn data export ZIP — or enter your work history manually.
+3. On first import, content is applied automatically. If you already have resume data, use the merge view to import specific sections or replace everything.
 
-### Step 2 — Review parsed resume bullets
+### Step 2 — Review and save your resume
 
-1. From the Materials workspace (`/resumes`), click **Open** on the **Review Parsed Profile** card (`/resumes/review`).
-   - Or: click **Settings** in the left sidebar → **Admin and supporting tools** → **Materials workspace** → **Review Parsed Profile → Open**.
-2. Read through each parsed bullet. The system will show you what it extracted from your resume.
-3. Edit any bullet that was misread. Delete duplicates or outdated entries.
-4. **Approve bullets you want the system to use.** Unapproved bullets are visible but not used in generated materials.
+1. Stay on **Resume** (`/resume`) and review contact info, summary, skills, work history, education, and projects.
+2. Click **Edit**, fix parser mistakes, and save your changes.
+3. Approve any proposed bullets you want used in generated materials.
 
-> **Why this matters:** Every resume and cover letter the system generates pulls from these approved bullets. Taking 15 minutes here saves you from correcting bad materials later.
+> **Why this matters:** Every resume and cover letter the system generates pulls from this single resume profile. Taking 15 minutes here saves you from correcting bad materials later.
 
 ### Step 3 — Fill in your candidate profile
 
@@ -1118,6 +1114,41 @@ If a recruiter sends you a brief about a role that is not yet in the system:
 3. Click **Generate Custom Resume**. The system will infer the role details and generate a tailored resume.
 
 This creates a resume only — it does not create a job tracker entry unless you later apply through the normal flow.
+
+### ATS readability score {#ats-readability-score}
+
+When you generate or preview a resume PDF, the app shows an **ATS** score (0–100). This measures whether an Applicant Tracking System can **extract and section-parse** your PDF as plain text — not whether your resume matches keywords for a specific job posting.
+
+**What the score checks:**
+
+| Factor | Penalty if missing | Required? |
+|---|---|---|
+| Enough extractable text (200+ characters) | −12 | Yes |
+| Contact email visible in text | −12 | Yes |
+| **Summary** section heading | −12 | Yes |
+| **Skills** section heading | −12 | Yes |
+| **Professional Experience** section heading | −12 | Yes |
+| Education section | None | Optional |
+| Projects section | None | Optional |
+
+**Score bands:**
+
+- **88+** — Strong: ATS parsers should read all required sections reliably.
+- **76–87** — Acceptable: Usable, but fix warnings when you can.
+- **Below 76** — Needs work: One or more required sections may not parse correctly.
+
+Click the ATS chip or **(i)** icon on any resume preview to open a breakdown: what passed, what is costing points, and numbered steps to reach 100. Steps are tagged **You edit** (add content in Edit Resume or Review) or **App can help** (the PDF builder can add section headings when underlying content exists).
+
+**Where scores appear:** Edit Resume live preview, Materials workspace master PDF, Generated Materials table, and Custom Opportunity preview.
+
+**Improving your score:**
+
+1. Upload and approve a resume with verified work history bullets.
+2. On **Edit Resume**, fill in contact email, professional summary, and core skills.
+3. Save work history so **Professional Experience** renders with bullets.
+4. Add Education, Projects, or custom sections (e.g. AI Engineering) in the supplemental editors — these help recruiters but do not change the readability score.
+
+> **Honesty note:** A high ATS readability score does not guarantee you will pass every company's keyword filter. It only confirms the PDF is machine-readable with standard section headings.
 
 ### Downloading materials
 
@@ -1934,9 +1965,8 @@ Here is how a typical day looks once the system is fully set up.
 
 | Card | URL | What you do there |
 |---|---|---|
-| **Upload Resume** → Open | `/resumes/upload` | Upload a resume file |
-| **Review Parsed Profile** → Open | `/resumes/review` | Approve parsed resume bullets |
-| **Candidate Profile** → Open | `/resumes/profile` | Skills, work history, verified bullets |
+| **Resume** | `/resume` | Create, import, edit, and preview your single source-of-truth resume |
+| **Materials workspace** | `/resumes` | Generate master PDFs and open generated materials |
 | **Generated Resumes** → Open | `/resumes/generated` | Review generated materials |
 | **Custom Opportunity** → Open | `/resumes/custom-opportunity` | Recruiter brief → tailored resume |
 | **Resume Variants** → Open | `/resumes/variants` | Manage positioning variants |

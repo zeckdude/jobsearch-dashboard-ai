@@ -11,7 +11,7 @@ const updateBulletSchema = z.object({
   company: z.string().trim().min(1).optional(),
   role: z.string().trim().min(1).optional(),
   category: z.string().trim().min(1).optional(),
-  text: z.string().trim().min(10).optional(),
+  text: z.string().trim().min(1).optional(),
   keywords: z.string().optional(),
   sourceText: z.string().optional(),
   truthLevel: z.enum(["verified", "inferred", "estimated", "needs_review"]).optional(),
@@ -43,10 +43,6 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
   try {
     const existing = await prisma.experienceBullet.findUnique({ where: { id: params.id } });
     if (!existing) return NextResponse.json({ error: "Bullet not found." }, { status: 404 });
-    if (existing.truthLevel !== "needs_review") {
-      return NextResponse.json({ error: "Only proposed bullets can be rejected." }, { status: 400 });
-    }
-
     await prisma.experienceBullet.delete({ where: { id: params.id } });
     return NextResponse.json({ deleted: true });
   } catch (error) {

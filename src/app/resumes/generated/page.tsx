@@ -20,15 +20,17 @@ import TableRow from "@mui/material/TableRow";
 import Typography from "@mui/material/Typography";
 import { AppShell } from "@/app/app-shell";
 import { ActionButton } from "@/components/action-button";
+import { AtsScoreHelp } from "@/components/resumes/ats-score-help";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { ScoreChip } from "@/components/ui/score-chip";
+import type { AtsReadabilityReport } from "@/lib/resumes/schemas";
 import { prisma } from "@/lib/prisma";
 import { RegenerateResumeButton } from "./regenerate-resume-button";
 
 export const dynamic = "force-dynamic";
 
-type AtsChecks = {
+type AtsChecks = Partial<AtsReadabilityReport> & {
   score?: number;
   warnings?: string[];
   textExtractable?: boolean;
@@ -183,7 +185,13 @@ export default async function GeneratedResumesPage() {
                         </Stack>
                       </TableCell>
                       <TableCell>v{resume.version}</TableCell>
-                      <TableCell>{typeof atsChecks.score === "number" ? <ScoreChip score={atsChecks.score} /> : <Chip label="Unchecked" />}</TableCell>
+                      <TableCell>
+                        {typeof atsChecks.score === "number" ? (
+                          <AtsScoreHelp score={atsChecks.score} report={atsChecks} />
+                        ) : (
+                          <Chip label="Unchecked" />
+                        )}
+                      </TableCell>
                       <TableCell>
                         <MaterialQaSummary notes={notes} />
                       </TableCell>

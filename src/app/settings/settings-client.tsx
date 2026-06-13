@@ -5,6 +5,7 @@ import Link from "next/link";
 import { SearchDefaultsSettings } from "./search-defaults-settings";
 import { ServiceHealthPanel } from "./service-health-panel";
 import type { ServiceHealthSettings } from "./service-health-panel";
+import { AdminAccessButton } from "@/components/admin-access-dialog";
 import NotificationsActiveOutlinedIcon from "@mui/icons-material/NotificationsActiveOutlined";
 import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import MarkEmailReadOutlinedIcon from "@mui/icons-material/MarkEmailReadOutlined";
@@ -427,8 +428,10 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
                 { href: "/evidence", label: "Evidence library" },
                 { href: "/sources", label: "Company sources" },
                 { href: "/agents", label: "Agent board" },
-                { href: "/resumes", label: "Materials workspace" },
+                { href: "/resume", label: "Resume" },
                 { href: "/resumes/generated", label: "Generated materials" },
+                { href: "/resumes/custom-opportunity", label: "Custom opportunity" },
+                { href: "/resumes/variants", label: "Resume variants" },
                 { href: "/networking", label: "Networking" },
                 { href: "/outcomes", label: "Outcome analytics" },
                 { href: "/runs", label: "Search runs" },
@@ -990,6 +993,19 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
                 {testing ? "Testing..." : "Send test notification"}
               </Button>
             </Stack>
+          </Stack>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent>
+          <Stack direction="row" spacing={2} sx={{ alignItems: "center", justifyContent: "space-between" }}>
+            <Box>
+              <Typography variant="h3">Admin access</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Unlock the Admin nav item to open internal tools and the design system showcase.
+              </Typography>
+            </Box>
+            <AdminAccessButton />
           </Stack>
         </CardContent>
       </Card>

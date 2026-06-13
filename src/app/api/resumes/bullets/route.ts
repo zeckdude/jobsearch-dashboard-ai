@@ -12,7 +12,7 @@ const createBulletSchema = z.object({
   company: z.string().min(1),
   role: z.string().min(1),
   category: z.string().min(1),
-  text: z.string().min(10),
+  text: z.string().min(1),
   keywords: z.string().optional(),
   sourceText: z.string().optional(),
   truthLevel: z.enum(["verified", "inferred", "estimated", "needs_review"]).default("verified"),

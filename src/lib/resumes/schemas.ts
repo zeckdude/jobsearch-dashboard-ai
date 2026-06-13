@@ -54,6 +54,14 @@ export const parseUploadedResumeSchema = z.object({
   ),
   education: z.array(z.string()).default([]),
   certifications: z.array(z.string()).default([]),
+  additionalSections: z
+    .array(
+      z.object({
+        title: z.string(),
+        content: z.string(),
+      }),
+    )
+    .default([]),
   inferredTags: z.array(z.string()).default([]),
   fieldsNeedingReview: z.array(z.string()).default([]),
   confidence: z.number().min(0).max(1),
@@ -104,6 +112,17 @@ export const generateCoverLetterSchema = z.object({
   unsupportedClaimsDetected: z.array(z.string()).default([]),
 });
 
+export const atsFactorSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  status: z.enum(["pass", "warn", "fail"]),
+  pointsLost: z.number(),
+  detail: z.string(),
+  recommendation: z.string(),
+  autoFixable: z.boolean(),
+  keepGuidance: z.string().optional(),
+});
+
 export const checkAtsReadabilitySchema = z.object({
   textExtractable: z.boolean(),
   contactInfoDetected: z.boolean(),
@@ -112,4 +131,10 @@ export const checkAtsReadabilitySchema = z.object({
   extractedTextLength: z.number(),
   warnings: z.array(z.string()),
   score: z.number().min(0).max(100),
+  acceptableScore: z.number(),
+  strongScore: z.number(),
+  factors: z.array(atsFactorSchema).default([]),
 });
+
+export type AtsReadabilityReport = z.infer<typeof checkAtsReadabilitySchema>;
+export type AtsFactor = z.infer<typeof atsFactorSchema>;

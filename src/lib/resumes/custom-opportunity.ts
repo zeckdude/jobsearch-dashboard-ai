@@ -4,7 +4,7 @@ import { runJobFitScoringAgent } from "@/lib/agents/job-fit-scorer";
 import { parseStructuredOutput } from "@/lib/ai/openai";
 import { tailorResumeForJob } from "@/lib/ai/resume";
 import { createResumeStrategy, attachResumeQa } from "@/lib/applications/material-agents";
-import { scoreJobForProfile } from "@/lib/job-search/scoring";
+import { evaluateJobAgainstProfile, type EvaluationResult } from "@/lib/job-search/scoring";
 import { captureManualJob } from "@/lib/jobs/manual-capture";
 import { prisma } from "@/lib/prisma";
 import { checkAtsReadability } from "@/lib/resumes/ats";
@@ -57,7 +57,7 @@ const inferredOpportunitySchema = z.object({
   title: z.string().nullable().default(null),
   location: z.string().nullable().default(null),
   remoteType: z.nativeEnum(RemoteType).nullable().default(null),
-  applicationUrl: z.string().url().nullable().default(null),
+  applicationUrl: z.string().nullable().default(null),
 });
 
 export type CustomOpportunityDetails = z.infer<typeof inferredOpportunitySchema>;
@@ -146,27 +146,59 @@ async function ensureCustomOpportunityMatch(job: Pick<JobPosting, "id" | "compan
   const profiles = await prisma.jobSearchProfile.findMany({ where: { enabled: true } });
   if (profiles.length === 0) throw new Error("Create or enable a job search profile before generating a custom opportunity resume.");
 
-  const bestProfile = [...profiles]
-    .map((profile) => ({ profile, score: scoreJobForProfile(job, profile).overallScore }))
-    .sort((a, b) => b.score - a.score)[0]?.profile;
-  if (!bestProfile) throw new Error("No job search profile was available for this opportunity.");
+  const best = [...profiles]
+    .map((profile) => ({ profile, evaluation: evaluateJobAgainstProfile(job, profile) }))
+    .sort((a, b) => b.evaluation.overallScore - a.evaluation.overallScore)[0];
+  if (!best) throw new Error("No job search profile was available for this opportunity.");
 
+  const user = await prisma.user.findFirst({ orderBy: { createdAt: "asc" } });
   await runJobFitScoringAgent({
     jobPostingId: job.id,
-    jobSearchProfileId: bestProfile.id,
-  });
+    jobSearchProfileId: best.profile.id,
+    userId: user?.id,
+  }).catch(() => null);
 
-  const created = await prisma.jobProfileMatch.findUnique({
+  return prisma.jobProfileMatch.upsert({
     where: {
       jobPostingId_jobSearchProfileId: {
         jobPostingId: job.id,
-        jobSearchProfileId: bestProfile.id,
+        jobSearchProfileId: best.profile.id,
       },
     },
+    update: buildCustomOpportunityMatchPayload(best.evaluation, best.profile.id),
+    create: {
+      jobPostingId: job.id,
+      jobSearchProfileId: best.profile.id,
+      status: "approved",
+      ...buildCustomOpportunityMatchPayload(best.evaluation, best.profile.id),
+    },
   });
-  if (!created) throw new Error("Unable to score this custom opportunity.");
+}
 
-  return created;
+function buildCustomOpportunityMatchPayload(evaluation: EvaluationResult, jobSearchProfileId: string) {
+  return {
+    matchTier: evaluation.tier === "full" ? ("full" as const) : ("partial" as const),
+    discoveredByProfileId: jobSearchProfileId,
+    overallScore: evaluation.overallScore,
+    titleFit: evaluation.titleFit,
+    skillFit: evaluation.skillFit,
+    seniorityFit: evaluation.seniorityFit,
+    industryFit: evaluation.industryFit,
+    compensationFit: evaluation.compensationFit,
+    remoteFit: evaluation.remoteFit,
+    relocationFit: evaluation.relocationFit,
+    strongestMatches: evaluation.strongestMatches as Prisma.InputJsonValue,
+    concerns: evaluation.concerns as Prisma.InputJsonValue,
+    missingKeywords: evaluation.missingKeywords as Prisma.InputJsonValue,
+    failedRequirements: evaluation.failedRequirements as Prisma.InputJsonValue,
+    passedRequirements: evaluation.passedRequirements as Prisma.InputJsonValue,
+    discoveryMetadata: {
+      captureSource: sourceName,
+      sourceName,
+    } as Prisma.InputJsonValue,
+    recommendedAction: evaluation.recommendedAction,
+    aiExplanation: evaluation.aiExplanation,
+  };
 }
 
 async function createGeneratedResumeForMatch(jobPostingId: string, jobProfileMatchId: string) {
@@ -195,8 +227,8 @@ async function createGeneratedResumeForMatch(jobPostingId: string, jobProfileMat
   });
   const latestUploadId = user.profile.resumeUploads[0]?.id;
   const parsedUpload = user.profile.resumeUploads[0]?.parsedJson as { education?: string[]; certifications?: string[] } | undefined;
-  const bullets = selectResumeSourceBullets(user.profile.experienceBullets, latestUploadId);
-  const sourceMaterialSummary = summarizeResumeSourceBullets(bullets, latestUploadId);
+  const bullets = selectResumeSourceBullets(user.profile.experienceBullets);
+  const sourceMaterialSummary = summarizeResumeSourceBullets(bullets);
   const emphasis = buildCustomOpportunityEmphasis({
     description: job.description,
     profileText: [

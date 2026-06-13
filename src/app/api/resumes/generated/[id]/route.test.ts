@@ -26,11 +26,14 @@ describe("PATCH /api/resumes/generated/[id]", () => {
     checkAtsReadabilityMock.mockReturnValue({
       textExtractable: true,
       contactInfoDetected: true,
-      sectionsDetected: ["Summary", "Skills"],
+      sectionsDetected: ["Summary", "Skills", "Professional Experience"],
       missingSections: [],
       extractedTextLength: 600,
       warnings: [],
       score: 94,
+      acceptableScore: 76,
+      strongScore: 88,
+      factors: [],
     });
   });
 

@@ -69,12 +69,12 @@ describe("/api/resumes/bullets/[id]", () => {
     expect(deleteMock).toHaveBeenCalledWith({ where: { id: "bullet_1" } });
   });
 
-  it("does not delete verified bullets", async () => {
+  it("deletes verified bullets when removed from the editor", async () => {
     findUniqueMock.mockResolvedValue({ id: "bullet_1", truthLevel: "verified" } as Awaited<ReturnType<typeof prisma.experienceBullet.findUnique>>);
 
     const response = await DELETE(new Request("http://localhost/api/resumes/bullets/bullet_1"), { params: { id: "bullet_1" } });
 
-    expect(response.status).toBe(400);
-    expect(deleteMock).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(deleteMock).toHaveBeenCalledWith({ where: { id: "bullet_1" } });
   });
 });

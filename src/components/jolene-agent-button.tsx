@@ -16,6 +16,8 @@ import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import Drawer from "@mui/material/Drawer";
 import Fab from "@mui/material/Fab";
+import { useFloatingChromeOffset } from "@/components/floating-chrome-offset-context";
+import { FAB_BASE_BOTTOM, FAB_RIGHT } from "@/lib/ui/fab-stack";
 import IconButton from "@mui/material/IconButton";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
@@ -76,6 +78,7 @@ type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 
 export function JoleneAgentButton() {
   const pathname = usePathname();
+  const { bottomOffset } = useFloatingChromeOffset();
   const { push, refresh } = useRouter();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<JoleneMessage[]>([]);
@@ -404,9 +407,13 @@ export function JoleneAgentButton() {
           onClick={() => setOpen(true)}
           sx={{
             position: "fixed",
-            right: { xs: 18, sm: 28 },
-            bottom: { xs: 18, sm: 28 },
+            right: FAB_RIGHT,
+            bottom: {
+              xs: FAB_BASE_BOTTOM.xs + bottomOffset,
+              sm: FAB_BASE_BOTTOM.sm + bottomOffset,
+            },
             zIndex: 1300,
+            transition: (theme) => theme.transitions.create("bottom"),
             boxShadow: "0 18px 42px rgba(15, 118, 110, 0.32)",
           }}
         >

@@ -4,11 +4,19 @@ import Badge from "@mui/material/Badge";
 import Fab from "@mui/material/Fab";
 import Tooltip from "@mui/material/Tooltip";
 import ChecklistRtlIcon from "@mui/icons-material/ChecklistRtl";
+import { useFloatingChromeOffset } from "@/components/floating-chrome-offset-context";
+import {
+  FAB_BASE_BOTTOM,
+  FAB_GAP,
+  FAB_RIGHT,
+  FAB_SIZE,
+} from "@/lib/ui/fab-stack";
 import { useWorkflowCoach, useDailyProgress } from "./WorkflowCoachContext";
 
 export function WorkflowCoachButton() {
   const { openDrawer, loading } = useWorkflowCoach();
   const { done, total } = useDailyProgress();
+  const { bottomOffset } = useFloatingChromeOffset();
 
   const allDone = done === total;
   const badgeContent = loading ? null : `${done}/${total}`;
@@ -21,9 +29,13 @@ export function WorkflowCoachButton() {
         aria-label="Open daily workflow coach"
         sx={{
           position: "fixed",
-          bottom: 96, // above Jolene button (which is at ~24px bottom)
-          right: 24,
+          bottom: {
+            xs: FAB_BASE_BOTTOM.xs + bottomOffset + FAB_SIZE + FAB_GAP,
+            sm: FAB_BASE_BOTTOM.sm + bottomOffset + FAB_SIZE + FAB_GAP,
+          },
+          right: FAB_RIGHT,
           zIndex: 1300,
+          transition: (theme) => theme.transitions.create("bottom"),
           bgcolor: allDone ? "success.main" : "primary.main",
           color: "primary.contrastText",
           "&:hover": {

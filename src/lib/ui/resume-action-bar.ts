@@ -1,0 +1,1 @@
+export const RESUME_ACTION_BAR_HEIGHT = 64;

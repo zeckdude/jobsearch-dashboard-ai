@@ -14,8 +14,21 @@ import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ResumeScrollActionBar } from "@/components/resumes/resume-scroll-action-bar";
+import {
+  AdditionalSectionsEditor,
+  draftToProjects,
+  LineListSectionEditor,
+  projectsToDraft,
+  ProjectsSectionEditor,
+} from "@/components/resumes/resume-supplemental-editors";
+import { useScrollPastAnchor } from "@/components/resumes/use-scroll-past-anchor";
+import { WorkHistoryTreeEditor } from "@/components/resumes/work-history-tree-editor";
+import { parsedWorkToTree, treeToParsedWork } from "@/lib/resumes/work-history-adapters";
+import { buildExperienceBulletsFromWork } from "@/lib/resumes/parse";
 import type { ParsedResume } from "@/lib/resumes/schemas";
+import type { WorkHistoryTree } from "@/lib/resumes/work-history-tree";
 
 type ReviewClientProps = {
   upload: {
@@ -30,18 +43,45 @@ type ReviewClientProps = {
 export function ResumeReviewClient({ upload }: ReviewClientProps) {
   const { refresh } = useRouter();
   const [parsed, setParsed] = useState(upload.parsedJson);
+  const [tree, setTree] = useState<WorkHistoryTree>(() => parsedWorkToTree(upload.parsedJson.workExperience));
   const [editing, setEditing] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const actionAnchorRef = useRef<HTMLDivElement>(null);
+  const showFloatingBar = useScrollPastAnchor(actionAnchorRef);
   const skillsText = useMemo(() => parsed.skills.coreSkills.join(", "), [parsed.skills.coreSkills]);
+  const draftProjects = useMemo(() => projectsToDraft(parsed.projects), [parsed.projects]);
+
+  useEffect(() => {
+    if (!editing) {
+      setTree(parsedWorkToTree(parsed.workExperience));
+    }
+  }, [parsed.workExperience, editing]);
+
+  function withSyncedBullets(next: ParsedResume): ParsedResume {
+    return {
+      ...next,
+      experienceBullets: buildExperienceBulletsFromWork(next.workExperience, next.skills.technicalSkills, next.experienceBullets),
+    };
+  }
+
+  function handleTreeChange(nextTree: WorkHistoryTree) {
+    setTree(nextTree);
+    setParsed((previous) => withSyncedBullets({
+      ...previous,
+      workExperience: treeToParsedWork(nextTree, previous.workExperience),
+    }));
+  }
 
   async function saveEdits() {
     setError("");
     setNotice("");
+    const synced = withSyncedBullets(parsed);
+    setParsed(synced);
     const response = await fetch(`/api/resumes/uploads/${upload.id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ parsedJson: parsed }),
+      body: JSON.stringify({ parsedJson: synced }),
     });
     const body = await response.json();
 
@@ -58,6 +98,13 @@ export function ResumeReviewClient({ upload }: ReviewClientProps) {
   async function approve() {
     setError("");
     setNotice("");
+    const synced = withSyncedBullets(parsed);
+    setParsed(synced);
+    await fetch(`/api/resumes/uploads/${upload.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parsedJson: synced }),
+    });
     const response = await fetch(`/api/resumes/uploads/${upload.id}/approve`, { method: "POST" });
     const body = await response.json();
 
@@ -85,6 +132,13 @@ export function ResumeReviewClient({ upload }: ReviewClientProps) {
     refresh();
   }
 
+  function cancelEditing() {
+    setParsed(upload.parsedJson);
+    setTree(parsedWorkToTree(upload.parsedJson.workExperience));
+    setEditing(false);
+    setError("");
+  }
+
   return (
     <Stack spacing={3}>
       {notice ? <Alert severity="success">{notice}</Alert> : null}
@@ -92,10 +146,21 @@ export function ResumeReviewClient({ upload }: ReviewClientProps) {
       <Card>
         <CardContent>
           <Stack spacing={2}>
-            <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
-              <Chip color="warning" label={upload.parsingStatus} />
-              <Chip variant="outlined" label={upload.fileName} />
-              <Chip variant="outlined" label="No fabricated experience" />
+            <Stack ref={actionAnchorRef} direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ justifyContent: "space-between", alignItems: { sm: "center" } }}>
+              <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
+                <Chip color="warning" label={upload.parsingStatus} />
+                <Chip variant="outlined" label={upload.fileName} />
+                <Chip variant="outlined" label="No fabricated experience" />
+              </Stack>
+              {editing ? (
+                <Button variant="contained" startIcon={<EditOutlinedIcon />} onClick={saveEdits} sx={{ alignSelf: { xs: "flex-start", sm: "auto" } }}>
+                  Save edits
+                </Button>
+              ) : (
+                <Button variant="outlined" startIcon={<EditOutlinedIcon />} onClick={() => setEditing(true)} sx={{ alignSelf: { xs: "flex-start", sm: "auto" } }}>
+                  Edit
+                </Button>
+              )}
             </Stack>
             <Divider />
             <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, 1fr)" }, gap: 2 }}>
@@ -150,40 +215,66 @@ export function ResumeReviewClient({ upload }: ReviewClientProps) {
                 }))
               }
             />
-            <Box>
-              <Typography variant="h3">Experience bullets</Typography>
-              <Stack spacing={1.5} sx={{ mt: 1.5 }}>
-                {parsed.experienceBullets.map((bullet, index) => (
-                  <TextField
-                    key={`${bullet.category}-${bullet.sourceText}-${bullet.text}`}
-                    label={`${bullet.category} · ${bullet.truthLevel}`}
-                    value={bullet.text}
-                    multiline
-                    disabled={!editing}
-                    onChange={(event) => {
-                      setParsed((previous) => {
-                        const nextBullets = [...previous.experienceBullets];
-                        nextBullets[index] = { ...bullet, text: event.target.value, truthLevel: "verified" };
-                        return { ...previous, experienceBullets: nextBullets };
-                      });
-                    }}
-                  />
-                ))}
-                {parsed.experienceBullets.length === 0 ? <Alert severity="warning">No bullets were extracted. Add richer resume text or edit after upload parsing improves.</Alert> : null}
-              </Stack>
-            </Box>
+            <WorkHistoryTreeEditor
+              tree={tree}
+              editing={editing}
+              onChange={handleTreeChange}
+              summary={`${tree.length} jobs · ${parsed.experienceBullets.length} bullets. Click Edit, then hover a row for drag/actions, or use keyboard shortcuts — open the guide above.`}
+            />
+            <Divider />
+            <LineListSectionEditor
+              title="Education"
+              summary="Schools, degrees, and training credentials."
+              lines={parsed.education}
+              editing={editing}
+              onChange={(lines) => setParsed((previous) => ({ ...previous, education: lines }))}
+              placeholder="Art Institute — B.S. Web Design"
+            />
+            <Divider />
+            <AdditionalSectionsEditor
+              sections={parsed.additionalSections ?? []}
+              editing={editing}
+              onChange={(sections) => setParsed((previous) => ({ ...previous, additionalSections: sections }))}
+            />
+            <Divider />
+            <ProjectsSectionEditor
+              projects={draftProjects}
+              editing={editing}
+              onChange={(next) => setParsed((previous) => ({ ...previous, projects: draftToProjects(next) }))}
+            />
+            <Divider />
+            <LineListSectionEditor
+              title="Certifications"
+              summary="Professional certifications and licenses."
+              lines={parsed.certifications}
+              editing={editing}
+              onChange={(lines) => setParsed((previous) => ({ ...previous, certifications: lines }))}
+            />
             <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
-              {editing ? (
-                <Button variant="contained" startIcon={<EditOutlinedIcon />} onClick={saveEdits}>Save edits</Button>
-              ) : (
-                <Button variant="outlined" startIcon={<EditOutlinedIcon />} onClick={() => setEditing(true)}>Edit</Button>
-              )}
               <Button variant="contained" color="success" startIcon={<CheckCircleOutlineIcon />} onClick={approve}>Approve candidate profile</Button>
               <Button variant="outlined" color="error" startIcon={<DeleteOutlineIcon />} onClick={remove}>Remove upload</Button>
             </Stack>
           </Stack>
         </CardContent>
       </Card>
+      <ResumeScrollActionBar
+        visible={showFloatingBar}
+        editing={editing}
+        onEdit={() => setEditing(true)}
+        onSave={() => void saveEdits()}
+        onCancel={cancelEditing}
+        label={upload.fileName}
+        secondaryActions={
+          <>
+            <Button variant="contained" color="success" startIcon={<CheckCircleOutlineIcon />} onClick={() => void approve()}>
+              Approve candidate profile
+            </Button>
+            <Button variant="outlined" color="error" startIcon={<DeleteOutlineIcon />} onClick={() => void remove()}>
+              Remove upload
+            </Button>
+          </>
+        }
+      />
       <Card>
         <CardContent>
           <Typography variant="h3">Extracted text preview</Typography>
